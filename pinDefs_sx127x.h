@@ -12,7 +12,7 @@
 #define CLEAR_RFSW                      HAL_GPIO_WritePin(RFSW_PORT, RFSW_PIN, GPIO_PIN_RESET)
 #define SET_RFSW                        HAL_GPIO_WritePin(RFSW_PORT, RFSW_PIN, GPIO_PIN_SET)
 
-#define DIO0_GPIO_CLK_ENABLE            __HAL_RCC_GPIOF_CLK_ENABLE
+#define DIO0_GPIO_CLK_ENABLE            __HAL_RCC_GPIOG_CLK_ENABLE
 #define DIO0_IRQHandler                 EXTI9_5_IRQHandler
 #define DIO0_PIN                        GPIO_PIN_6
 #define DIO0_PORT                       GPIOG

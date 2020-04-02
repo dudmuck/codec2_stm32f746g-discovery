@@ -33,6 +33,7 @@
 #include "stm32746g_discovery_audio.h"
 #include "stm32746g_discovery_qspi.h"
 #include "codec2/src/codec2.h"
+#include <stdbool.h>
 
 /* Macros --------------------------------------------------------------------*/
 #ifdef USE_FULL_ASSERT
@@ -116,6 +117,11 @@ extern uint8_t rxchar;
 extern struct CODEC2 *c2;
 extern unsigned nsamp;
 extern unsigned nsamp_x2;
+
+#define MIC_RIGHT       0xcafe
+#define MIC_LEFT        0xf00d
+extern bool micRightEn;
+extern bool micLeftEn;
 #endif /* __MAIN_H */
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

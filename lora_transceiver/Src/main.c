@@ -36,6 +36,7 @@ volatile uint8_t uartReceived;
 uint8_t rxchar;
 
 struct CODEC2 *c2;
+uint8_t frames_per_sec;
 unsigned nsamp;
 unsigned nsamp_x2;
 uint8_t _bytes_per_frame;
@@ -123,16 +124,35 @@ const unsigned BPS_SELECT_BASE_X = 20;
 const unsigned BPS_SELECT_STEP_X = 100;
 int8_t selected_bitrate;  // upon touch release
 int8_t pressed_bitrate = -1;
+int selection_state;
+
+#ifndef MIC_DISABLE
+static bool pressed_micRight;
+static bool pressed_micLeft;
+#endif /* !MIC_DISABLE */
+bool micRightEn;
+bool micLeftEn;
 
 static void
-Touchscreen_DrawBackground (uint8_t state)
+Touchscreen_DrawBackground(bool touched, uint16_t tx, uint16_t ty)
 {
-    unsigned y = BPS_SELECT_BASE_Y , i = 0;
-    unsigned x = BPS_SELECT_BASE_X;
+    unsigned mic_x_base = BSP_LCD_GetXSize() - 60;
+    unsigned _y = BPS_SELECT_BASE_Y, i = 0;
+    unsigned _x = BPS_SELECT_BASE_X;
+
+    if (touched && tx < (mic_x_base-20)) {
+        if (ty >= BPS_SELECT_BASE_Y) {
+            selection_state = ty - BPS_SELECT_BASE_Y;
+            selection_state /= BPS_SELECT_STEP_Y;
+            if (tx > (BPS_SELECT_BASE_X + BPS_SELECT_STEP_X)) {
+                selection_state += 6;
+            }
+        }
+    }
 
     BSP_LCD_SetFont(&Font24);
     while (modeStr[i] != NULL) {
-        if (state == i) {
+        if (selection_state == i) {
             BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
             BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
             if (modeStr[i][0] != 0) // zero-length modes dont exist
@@ -141,14 +161,46 @@ Touchscreen_DrawBackground (uint8_t state)
             BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
             BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
         }
-        BSP_LCD_DisplayStringAt(x, y, (uint8_t *)modeStr[i], LEFT_MODE);
-        y += BPS_SELECT_STEP_Y;
+        BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)modeStr[i], LEFT_MODE);
+        _y += BPS_SELECT_STEP_Y;
         if (i == 5) {
-            y = BPS_SELECT_BASE_Y;
-            x += BPS_SELECT_STEP_X;    // next column
+            _y = BPS_SELECT_BASE_Y;
+            _x += BPS_SELECT_STEP_X;    // next column
         }
         i++;
     }
+
+#ifndef MIC_DISABLE
+    /////////////////////////
+    BSP_LCD_SetFont(&Font12);
+    _x = mic_x_base;
+    _y = BSP_LCD_GetYSize() / 3;
+    BSP_LCD_SetTextColor(micRightEn ? LCD_COLOR_WHITE : LCD_COLOR_BLUE);
+    if (touched) {
+        if (ty >= _y && ty <= _y+12 && tx >= _x) {
+            pressed_micRight = true;
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        }
+    } else
+        pressed_micRight = false;
+
+    BSP_LCD_SetBackColor(micRightEn ? LCD_COLOR_BLUE : LCD_COLOR_WHITE);
+    BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)"micRight", LEFT_MODE);
+
+    /////////////////////////
+    _y = _y * 2;
+    BSP_LCD_SetTextColor(micLeftEn ? LCD_COLOR_WHITE : LCD_COLOR_BLUE);
+    if (touched) {
+        if (ty >= _y && ty <= _y+12 && tx >= _x) {
+            pressed_micLeft = true;
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        }
+    } else
+        pressed_micLeft = false;
+
+    BSP_LCD_SetBackColor(micLeftEn ? LCD_COLOR_BLUE : LCD_COLOR_WHITE);
+    BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)" micLeft", LEFT_MODE);
+#endif /* !MIC_DISABLE */
 }
 
 #define USARTx_DMA_TX_IRQn                DMA2_Stream7_IRQn
@@ -222,9 +274,7 @@ void UART_DMA_Init(COM_TypeDef COM)
   */
 int main(void)
 {
-    const char* str;
     TS_StateTypeDef  TS_State;
-    int state;
     uint8_t status, lcd_status = LCD_OK;
 
     /* Enable the CPU Cache */
@@ -279,115 +329,142 @@ int main(void)
     }
     else
     {
-        state = -1;
-        Touchscreen_DrawBackground(state);
+#ifdef MIC_DISABLE
+    #if (MIC_DISABLE==MIC_LEFT)
+        micRightEn = true;
+        micLeftEn = false;
+    #elif(MIC_DISABLE==MIC_RIGHT)
+        micRightEn = false;
+        micLeftEn = true;
+    #endif
+#else
+        micRightEn = true;  // default mic enabled
+        micLeftEn = true;   // default mic enabled
+#endif /* !MIC_DISABLE */
+        selection_state = -1;
+        Touchscreen_DrawBackground(false, 0, 0);
     }
 
     while (c2 == NULL) {
         uint16_t x, y;
-        int I;
         if (status == TS_OK) {
             BSP_TS_GetState(&TS_State);
             if (TS_State.touchDetected) {
                 x = TS_State.touchX[0];
                 y = TS_State.touchY[0];
                 printf("touch x=%u, y=%u\r\n", x, y);
-                if (y >= BPS_SELECT_BASE_Y) {
-                    I = y - BPS_SELECT_BASE_Y;
-                    I /= BPS_SELECT_STEP_Y;
-                    if (x > (BPS_SELECT_BASE_X + BPS_SELECT_STEP_X)) {
-                        I += 6;
-                    }
-                    printf("I:%d\r\n", I);
-                    Touchscreen_DrawBackground(I);
+                Touchscreen_DrawBackground(true, x, y);
+            } else {
+                if (pressed_bitrate != -1) {
+                    /* Set LCD Foreground Layer  */
+                    BSP_LCD_SelectLayer(LTDC_ACTIVE_LAYER);
+                    BSP_LCD_SetFont(&LCD_DEFAULT_FONT);
+                    /* Clear the LCD */
+                    BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+                    BSP_LCD_Clear(LCD_COLOR_WHITE);
+                    BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
+                    c2 = codec2_create(pressed_bitrate);
+                    if (c2 == NULL) {
+                        BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"codec2_create() failed", CENTER_MODE);
+                        pressed_bitrate = -1;
+                        HAL_Delay(500);
+                        selection_state = -1;
+                    } else
+                        selected_bitrate = pressed_bitrate;
+                } // ..if (pressed_bitrate != -1)
+#ifndef MIC_DISABLE
+                if (pressed_micRight) {
+                    micRightEn ^= true;
+                    printf("micRightEn:%d\r\n", micRightEn);
+                    pressed_micRight = false;
+                } else if (pressed_micLeft) {
+                    micLeftEn ^= true;
+                    printf("micLeftEn:%d\r\n", micLeftEn);
+                    pressed_micLeft = false;
                 }
-            } else if (pressed_bitrate != -1) {
-                /* Set LCD Foreground Layer  */
-                BSP_LCD_SelectLayer(LTDC_ACTIVE_LAYER);
-                BSP_LCD_SetFont(&LCD_DEFAULT_FONT);
-                /* Clear the LCD */
-                BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
-                BSP_LCD_Clear(LCD_COLOR_WHITE);
-                BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
-                c2 = codec2_create(pressed_bitrate);
-                if (c2 == NULL) {
-                    BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"codec2_create() failed", CENTER_MODE);
-                    pressed_bitrate = -1;
-                    HAL_Delay(500);
-                    state = -1;
-                    Touchscreen_DrawBackground(state);
-                } else
-                    selected_bitrate = pressed_bitrate;
-            }
-        }
+#endif /* !MIC_DISABLE */
+                Touchscreen_DrawBackground(false, 0, 0);
+            } // ..if (!TS_State.touchDetected)
+        } // ..if (status == TS_OK)
         HAL_Delay(10);
-    } // ..while ()
+    } // ..while (c2 == NULL)
 
-    switch (selected_bitrate) {
-        case CODEC2_MODE_3200:
-            lora_payload_length = 128;
-            sf_at_500KHz = 9;   // at 99% duty at sf10
-            inter_pkt_timeout = 40;
-            str = "3200";
-            break;
-        case CODEC2_MODE_2400:
-            lora_payload_length = 96;
-            sf_at_500KHz = 10;
-            inter_pkt_timeout = 40;
-            str = "2400";
-            break;
-        case CODEC2_MODE_1600:
-            lora_payload_length = 128;
-            sf_at_500KHz = 11;
-            inter_pkt_timeout = 40;
-            str = "1600";
-            break;
-        case CODEC2_MODE_1400:
-            lora_payload_length = 112;
-            sf_at_500KHz = 11;
-            inter_pkt_timeout = 40;
-            str = "1400";
-            break;
-        case CODEC2_MODE_1300:
-            lora_payload_length = 52;
-            sf_at_500KHz = 11;
-            inter_pkt_timeout = 40;
-            str = "1300";
-            break;
-        case CODEC2_MODE_1200:
-            lora_payload_length = 96;
-            sf_at_500KHz = 11;
-            inter_pkt_timeout = 40;
-            str = "1200";
-            break;
-        case CODEC2_MODE_700C:
-            lora_payload_length = 56;
-            sf_at_500KHz = 12;
-            inter_pkt_timeout = 40;
-            str = "700C";
-            break;
-        case CODEC2_MODE_450:
-            lora_payload_length = 36;
-            sf_at_500KHz = 12;
-            inter_pkt_timeout = 70;
-            str = "450";
-            break;
-        case CODEC2_MODE_450PWB:
-            lora_payload_length = 36;
-            sf_at_500KHz = 12;
-            inter_pkt_timeout = 70;
-            str = "450PWB";
-            break;
-        default: str = NULL;
+    /* Clear the LCD */
+    BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+    BSP_LCD_Clear(LCD_COLOR_WHITE);
+    BSP_LCD_SetFont(&Font24);
+    BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+
+    {
+        char buf[32];
+        const char* str;
+        switch (selected_bitrate) {
+            case CODEC2_MODE_3200:
+                lora_payload_length = 128;
+                sf_at_500KHz = 9;   // at 99% duty at sf10
+                inter_pkt_timeout = 40;
+                str = "3200";
+                break;
+            case CODEC2_MODE_2400:
+                lora_payload_length = 96;
+                sf_at_500KHz = 10;
+                inter_pkt_timeout = 40;
+                str = "2400";
+                break;
+            case CODEC2_MODE_1600:
+                lora_payload_length = 128;
+                sf_at_500KHz = 11;
+                inter_pkt_timeout = 40;
+                str = "1600";
+                break;
+            case CODEC2_MODE_1400:
+                lora_payload_length = 112;
+                sf_at_500KHz = 11;
+                inter_pkt_timeout = 40;
+                str = "1400";
+                break;
+            case CODEC2_MODE_1300:
+                lora_payload_length = 52;
+                sf_at_500KHz = 11;
+                inter_pkt_timeout = 40;
+                str = "1300";
+                break;
+            case CODEC2_MODE_1200:
+                lora_payload_length = 96;
+                sf_at_500KHz = 11;
+                inter_pkt_timeout = 40;
+                str = "1200";
+                break;
+            case CODEC2_MODE_700C:
+                lora_payload_length = 56;
+                sf_at_500KHz = 12;
+                inter_pkt_timeout = 40;
+                str = "700C";
+                break;
+            case CODEC2_MODE_450:
+                lora_payload_length = 36;
+                sf_at_500KHz = 12;
+                inter_pkt_timeout = 70;
+                str = "450";
+                break;
+            case CODEC2_MODE_450PWB:
+                lora_payload_length = 36;
+                sf_at_500KHz = 12;
+                inter_pkt_timeout = 70;
+                str = "450PWB";
+                break;
+            default: str = NULL;
+        } // ..switch (selected_bitrate)
+
+        sprintf(buf, "%c  %s  %c", micLeftEn ? 'L' : ' ', str, micRightEn ? 'R' : ' ');
+        BSP_LCD_DisplayStringAt(0, 10, (uint8_t *)buf, CENTER_MODE);
     }
+    nsamp = codec2_samples_per_frame(c2);
+    nsamp_x2 = nsamp * 2;
+    frames_per_sec = 8000 / nsamp;
 
     /* radio is started after bw/sf is known */
     start_radio();
-
-    BSP_LCD_DisplayStringAt(0, 10, (uint8_t *)str, CENTER_MODE);
-    nsamp = codec2_samples_per_frame(c2);
-    nsamp_x2 = nsamp * 2;
-    printf("nsamp:%u\r\n", nsamp);
 
     if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
         _bytes_per_frame = codec2_bits_per_frame(c2) / 4;       // dual frame for integer number of bytes
@@ -399,8 +476,7 @@ int main(void)
         _bytes_per_frame = codec2_bits_per_frame(c2) / 8;
     }
 
-#if 0
-#endif /* if 0 */
+    printf("nsamp:%u, _bytes_per_frame:%u, frame_length_bytes:%u\r\n", nsamp, _bytes_per_frame, frame_length_bytes);
     AudioLoopback_demo();
 
 } // ..main()
@@ -551,7 +627,6 @@ void lcd_print_tx_duration(int dur, unsigned interval)
     float duty = (float)dur / interval;
 
     sprintf(str, "%02u%%  %3d / %u   ", (unsigned)(duty * 100), dur, interval);
-    printf("lcdstr:%s\r\n", str);
     BSP_LCD_SetFont(&Font24);
     if (dur <= 0) {
         BSP_LCD_SetBackColor(LCD_COLOR_RED);

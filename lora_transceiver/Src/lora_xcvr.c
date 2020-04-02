@@ -50,7 +50,9 @@ typedef enum {
     PRESSED_SF_UP,
     PRESSED_SF_DOWN,
     PRESSED_MICGAIN_UP,
-    PRESSED_MICGAIN_DOWN
+    PRESSED_MICGAIN_DOWN,
+    PRESSED_PKTLEN_UP,
+    PRESSED_PKTLEN_DOWN
 } pressed_e;
 
 typedef enum {
@@ -70,6 +72,9 @@ volatile uint8_t terminate_spkr_rx;   // flag
 
 volatile uint32_t cycleDur;
 volatile uint32_t cycleStartAt;
+
+uint8_t frameCnt;
+unsigned tickAtFrameSecond;
 
 const uint16_t sine_table[SINE_TABLE_LENGTH] =
 {
@@ -321,13 +326,27 @@ void decimated_encode(const short *in, uint8_t *out)
     for (x = 0; x < nsamp; x++) {
         sum = 0;
         for (i = 0; i < navgs_; i++) {
-            sum += *in++;
-            in++;
+            if (micRightEn && micLeftEn) {
+                int v = *in++;
+                v += *in++;
+                sum += (v / 2);
+            } else if (micRightEn) {
+                sum += *in++;
+                in++;
+            } else if (micLeftEn) {
+                in++;
+                sum += *in++;
+            }
         }
         to_encoder[x] = sum / navgs_;
     }
 
     codec2_encode(c2, out, to_encoder);
+    if (++frameCnt == frames_per_sec) {
+        printf("%lums for %u frames\r\n", uwTick - tickAtFrameSecond, frames_per_sec);
+        tickAtFrameSecond = uwTick;
+        frameCnt = 0;
+    }
 }
 
 void tx_encoded(uint8_t tx_nbytes)
@@ -349,6 +368,7 @@ void lora_rx_begin()
 {
     lorahal.rx(0);
     appHal.lcd_printOpMode(false);
+    frameCnt = 0;
 }
 
 void sine_out(unsigned skipcnt)
@@ -461,10 +481,10 @@ void put_spkr()
         asm("nop");
 
     if (audio_play_state_ == AUDIO_PLAY_FULL) {
-        printf("playFull\r\n");
+        //printf("playFull\r\n");
         outPtr = (short*)audio_buffer_out_B;
     } else if (audio_play_state_ == AUDIO_PLAY_HALF) {
-        printf("playHalf\r\n");
+        //printf("playHalf\r\n");
         outPtr = (short*)audio_buffer_out;
     }
 
@@ -486,6 +506,12 @@ void put_spkr()
     }
 
     fdb ^= 1;
+
+    if (++frameCnt == frames_per_sec) {
+        printf("%lums for %u frames\r\n", uwTick - tickAtFrameSecond, frames_per_sec);
+        tickAtFrameSecond = uwTick;
+        frameCnt = 0;
+    }
 }
 
 void parse_rx()
@@ -633,7 +659,7 @@ void parse_rx()
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
             codec2_decode(c2, decBuf, encoded);
 
-            printf("%u,%uplayStateWait\r\n", fdb, n);
+            //printf("%u,%uplayStateWait\r\n", fdb, n);
             put_spkr();
         }
     }
@@ -676,6 +702,7 @@ void radio_screen(const TS_StateTypeDef *TS_State)
     static pressed_e prevPressed;
     const unsigned y_base = 30;
     const unsigned x_sf_base = 180;
+    const unsigned y_pktlen_base = y_base + 130;
     const unsigned x_micgain_base = BSP_LCD_GetXSize() - 80;
 
     BSP_LCD_SetFont(&Font24);
@@ -685,6 +712,11 @@ void radio_screen(const TS_StateTypeDef *TS_State)
     appHal.lcd_print_bw(0, y_base+52);
     appHal.lcd_print_sf(x_sf_base, y_base+52);
     mic_LCD_print(x_micgain_base, y_base);
+    {
+        char str[16];
+        sprintf(str, "%u pktLength  ", lora_payload_length);
+        BSP_LCD_DisplayStringAt(0, y_pktlen_base+26, (uint8_t *)str, LEFT_MODE);
+    }
 
     lorahal.service();
     if (TS_State->touchDetected) {
@@ -696,6 +728,10 @@ void radio_screen(const TS_StateTypeDef *TS_State)
                 pressed = PRESSED_BW_UP;
             } else if (y > (y_base+78) && y < (y_base+104)) { // 108 to 134
                 pressed = PRESSED_BW_DOWN;
+            } else if (y >= y_pktlen_base && y < y_pktlen_base+26) {
+                pressed = PRESSED_PKTLEN_UP;
+            } else if (y >= y_pktlen_base+52 && y < y_pktlen_base+78) {
+                pressed = PRESSED_PKTLEN_DOWN;
             }
         } else if (x < x_micgain_base-20) {
             if (y > (y_base+26) && y < (y_base+52)) {   // 56 to 72
@@ -737,6 +773,14 @@ void radio_screen(const TS_StateTypeDef *TS_State)
             if (AudioInVolume > 0)
                 BSP_AUDIO_IN_SetVolume(AudioInVolume-1);
             mic_LCD_print(x_micgain_base, y_base);
+        } else if (prevPressed == PRESSED_PKTLEN_UP) {
+            if (lora_payload_length < 256-_bytes_per_frame)
+                lora_payload_length += _bytes_per_frame;
+            printf("pktLenUp %u\r\n", lora_payload_length );
+        } else if (prevPressed == PRESSED_PKTLEN_DOWN) {
+            if (lora_payload_length > _bytes_per_frame)
+                lora_payload_length -= _bytes_per_frame;
+            printf("pktLenDown %u\r\n", lora_payload_length);
         }
 
         if (prevPressed == PRESSED_BW_DOWN || prevPressed == PRESSED_BW_UP) {
@@ -771,6 +815,15 @@ void radio_screen(const TS_StateTypeDef *TS_State)
     BSP_LCD_SetBackColor(pressed == PRESSED_MICGAIN_DOWN ? LCD_COLOR_BLUE : LCD_COLOR_WHITE);
     BSP_LCD_SetTextColor(pressed == PRESSED_MICGAIN_DOWN ? LCD_COLOR_WHITE : LCD_COLOR_BLUE);
     BSP_LCD_DisplayStringAt(x_micgain_base, y_base+78, (uint8_t *)"DOWN", LEFT_MODE);
+
+
+    BSP_LCD_SetBackColor(pressed == PRESSED_PKTLEN_UP ? LCD_COLOR_BLUE : LCD_COLOR_WHITE);
+    BSP_LCD_SetTextColor(pressed == PRESSED_PKTLEN_UP ? LCD_COLOR_WHITE : LCD_COLOR_BLUE);
+    BSP_LCD_DisplayStringAt(0, y_pktlen_base, (uint8_t *)" UP", LEFT_MODE);
+
+    BSP_LCD_SetBackColor(pressed == PRESSED_PKTLEN_DOWN ? LCD_COLOR_BLUE : LCD_COLOR_WHITE);
+    BSP_LCD_SetTextColor(pressed == PRESSED_PKTLEN_DOWN ? LCD_COLOR_WHITE : LCD_COLOR_BLUE);
+    BSP_LCD_DisplayStringAt(0, y_pktlen_base+52, (uint8_t *)"DOWN", LEFT_MODE);
 
     prevPressed = pressed;
 }
@@ -858,6 +911,7 @@ void AudioLoopback_demo(void)
                 tx_buf_idx = 0;
                 cycleStartAt = 0;
                 mid = 0;
+                frameCnt = 0;
             }
 
             if (audio_rec_buffer_state != BUFFER_OFFSET_NONE) {

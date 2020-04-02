@@ -25,9 +25,9 @@ try:
             modeStr = "FS_TX"; // 2
             break;
         case 3:
-            BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
-            BSP_LCD_SetTextColor(LCD_COLOR_RED);
-            modeStr = "   TX"; // 3
+            BSP_LCD_SetBackColor(LCD_COLOR_RED);
+            BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
+            modeStr = "TX"; // 3
             break;
         case 4:
             modeStr = "FS_RX"; // 4
@@ -384,7 +384,7 @@ static void lcd_print_sx127x_bw(uint8_t x, uint8_t y)
 static void lcd_print_sx127x_sf(uint8_t x, uint8_t y)
 {
     char str[16];
-    sprintf(str, "%u", sx127x_getSf());
+    sprintf(str, "sf%u", sx127x_getSf());
     BSP_LCD_DisplayStringAt(x, y, (uint8_t *)str, LEFT_MODE);
 }
 

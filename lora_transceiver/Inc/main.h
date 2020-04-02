@@ -117,6 +117,7 @@ extern uint8_t rxchar;
 extern struct CODEC2 *c2;
 extern unsigned nsamp;
 extern unsigned nsamp_x2;
+extern uint8_t frames_per_sec;
 #endif /* __MAIN_H */
 
 extern uint8_t lora_payload_length;
@@ -131,6 +132,11 @@ extern volatile int rx_size;
 extern volatile float rx_rssi;
 extern volatile float rx_snr;
 extern volatile uint32_t txStartAt;
+
+#define MIC_RIGHT       0xcafe
+#define MIC_LEFT        0xf00d
+extern bool micRightEn;
+extern bool micLeftEn;
 
 extern unsigned inter_pkt_timeout;
 extern int8_t selected_bitrate;  // upon touch release
@@ -158,12 +164,6 @@ typedef struct {
     void (*step_sf)(bool);
 } loraAppHal_t;
 extern loraAppHal_t appHal;
-//void lcd_print_sx126x_opmode(/*const char**/);
-//void sx126x_print_status(void);
-//void lcd_print_sx126x_bw(uint8_t x, uint8_t y);
-//void lcd_print_sx126x_sf(uint8_t x, uint8_t y);
-//void sx126x_step_sf(bool up);
-//void sx126x_step_bw(bool up);
 extern volatile uint32_t cycleDur;
 void setAppHal_sx126x(void);
 void setAppHal_sx127x(void);

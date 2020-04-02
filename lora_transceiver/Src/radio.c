@@ -20,15 +20,12 @@ void radio_irq_callback()
 void txDoneCB()
 {
     txing = 0;
-    printf("___txDone____ irqat:%u txstartAt:%u cyc:%u\r\n", tickAtIrq, (unsigned)txStartAt, (unsigned)cycleDur);
     appHal.lcd_printOpMode(false);
     lcd_print_tx_duration((int)(tickAtIrq - txStartAt), (unsigned)cycleDur);
     if (rx_start_at_tx_done) { 
         lora_rx_begin();
         rx_start_at_tx_done = 0;
-        printf("-rxStart");
     }
-    printf("\r\n");
 }
 
 void rxTimeoutCB()

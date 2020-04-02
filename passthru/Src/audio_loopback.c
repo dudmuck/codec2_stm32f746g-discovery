@@ -228,6 +228,28 @@ void svc_uart()
     }
 }
 
+/* mono copy from one microphone to both speaker channels */
+static void audiocpy(short *audioOut, short *audioIn)
+{
+    unsigned n, stop = audio_block_size / 2;
+    unsigned l = 0, r = 0;
+    for (n = 0; n < stop; n++) {
+        short v = 0;
+        if (micLeftEn) {
+            audioIn++;
+            v = *audioIn++;
+            l += 2;
+        } else if (micRightEn) {
+            v = *audioIn++;
+            audioIn++;
+            r += 2;
+        }
+        *audioOut++ = v;
+        *audioOut++ = v;
+    }
+    printf("L%u R%u\r\n", l, r);
+}
+
 static void resampler(short *audioOut, short *audioIn, short* prevDecBuf, short* decBuf)
 {
     int sum;
@@ -238,14 +260,17 @@ static void resampler(short *audioOut, short *audioIn, short* prevDecBuf, short*
     for (n = 0; n < nsamp; n++) {
         sum = 0;
         for (i = 0; i < resamp_ratio; i++) {
-#if 0
-            short val = *audioIn++;
-            sum += val;
-            audioIn++; // discard other microphone
-#endif /* if 0 */
-            short val = *audioIn++;
-            val += *audioIn++;  // average right & left microphones
-            sum += val / 2;
+            if (micLeftEn && micRightEn) {
+                short val = *audioIn++;
+                val += *audioIn++;  // average right & left microphones
+                sum += val / 2;
+            } else if (micLeftEn) {
+                sum += *audioIn++;
+                audioIn++;
+            } else if (micRightEn) {
+                audioIn++;
+                sum += *audioIn++;
+            }
         }
         decBuf[n] = sum / resamp_ratio;
     }
@@ -323,6 +348,8 @@ void AudioLoopback_demo(unsigned rate)
 
     step = 1.0 / resamp_ratio;
     printf("rate:%u step:%f, sineInc:%u audio_block_size:%u\r\n", rate, (double)step, sine_table_inc, audio_block_size);
+
+    printf("mic left%s, right:%s\r\n", micLeftEn ? "On" : "off" , micRightEn ? "On" : "off");
     /* Initialize Audio Recorder */
     if (BSP_AUDIO_IN_OUT_Init(INPUT_DEVICE_DIGITAL_MICROPHONE_2, OUTPUT_DEVICE_HEADPHONE, rate, DEFAULT_AUDIO_IN_BIT_RESOLUTION, DEFAULT_AUDIO_IN_CHANNEL_NBR) == AUDIO_OK)
     {
@@ -387,7 +414,10 @@ void AudioLoopback_demo(unsigned rate)
         if (resamp8k) {
             resampler((short *)(AUDIO_BUFFER_OUT), audio_in_first, from_decoderA, from_decoderB);
         } else {
-            memcpy((uint16_t *)(AUDIO_BUFFER_OUT), audio_in_first, audio_block_size);
+            if (micLeftEn && micRightEn) {
+                memcpy((uint16_t *)(AUDIO_BUFFER_OUT), audio_in_first, audio_block_size);
+            } else
+                audiocpy((short*)(AUDIO_BUFFER_OUT), audio_in_first);
         }
 
         /* Wait end of one block recording */
@@ -405,10 +435,13 @@ void AudioLoopback_demo(unsigned rate)
                 from_decoderB, from_decoderA
             );
         } else {
-            memcpy((uint16_t *)(AUDIO_BUFFER_OUT + audio_block_size),
-                audio_in_second,
-                audio_block_size
-            );
+            if (micLeftEn && micRightEn) {
+                memcpy((uint16_t *)(AUDIO_BUFFER_OUT + audio_block_size),
+                    audio_in_second,
+                    audio_block_size
+                );
+            } else
+                audiocpy((short*)(AUDIO_BUFFER_OUT + audio_block_size), audio_in_second);
         }
 
         svc_uart();

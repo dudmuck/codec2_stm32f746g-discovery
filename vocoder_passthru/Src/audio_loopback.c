@@ -94,22 +94,17 @@ void svc_uart()
         x = TS_State.touchX[0];
         y = TS_State.touchY[0];
         if (x < 50) {
-            //printf("touch x=%u, y=%u ", x, y);
             if (y >= (y_base+52) && y <= (y_base+78)) {
-                //printf("DOWNpressed ");
                 pressed = PRESSED_DOWN;
             } else if (y >= y_base && y <= (y_base+26)) {
-                //printf("UPpressed ");
                 pressed = PRESSED_UP;
             }
         }
     } else {
         if (pressed == PRESSED_UP) {
-            //printf("releaseUP ");
             if (++enc_in_idx == N_ENCS)
                 enc_in_idx = 0;
         } else if (pressed == PRESSED_DOWN) {
-            //printf("releaseDOWN ");
             if (enc_in_idx == 0)
                 enc_in_idx = N_ENCS-1;
             else
@@ -179,20 +174,21 @@ void decimated_encode(const short *in)
         int avg;
         sum = 0;
         for (i = 0; i < navgs_; i++) {
-#if 0
-            sum += *in++;
-            in++;   // skip other mic
-#endif /* if 0 */
-            int v = *in++;
-            v += *in++; // taking average of both microphones
-            sum += (v / 2);
+            if (micRightEn && micLeftEn) {
+                int v = *in++;
+                v += *in++; // taking average of both microphones
+                sum += (v / 2);
+            } else if (micRightEn) {
+                sum += *in++;
+                in++;
+            } else if (micLeftEn) {
+                in++;
+                sum += *in++;
+            }
         }
         avg = sum / num_avgs;
         to_encoder[x] = avg;
-        /*if (x == 0)
-            printf("MIC:%d = %d / %u\r\n", avg, sum, navgs_);*/
     }
-    /*printf("abs:%u\r\n", audio_block_size);*/
 
     codec2_encode(c2, encoded[enc_in_idx], to_encoder);
 
@@ -304,7 +300,6 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
     BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
     BSP_LCD_DisplayStringAt(0, 45, (uint8_t *)"Microphones sound streamed to headphones", CENTER_MODE);
 
-    //audio_block_size = nsamp * 8;
     audio_block_size = nsamp * (audioRate / 8000) * 4;
     navgs_ = audioRate / 8000;
     step = 1.0 / navgs_;
@@ -337,7 +332,6 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
             svc_uart();
 
         inBuf = (audio_rec_buffer_state == BUFFER_OFFSET_HALF) ? audio_buffer_in : audio_buffer_in_B;
-        printf("encodeStart %u\r\n", enc_in_idx);
         decimated_encode((short*)inBuf);
 
         audio_rec_buffer_state = BUFFER_OFFSET_NONE;
@@ -361,7 +355,6 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
         audio_rec_buffer_state = BUFFER_OFFSET_NONE;
         /* Copy recorded 1st half block */
         c2_passthru((short*)audio_buffer_out, (short*)audio_buffer_in);
-        printf("navgs:%u nsamp:%u\r\n", navgs_, nsamp);
 
         /* Wait end of one block recording */
         while(audio_rec_buffer_state != BUFFER_OFFSET_FULL)
@@ -377,7 +370,6 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
         audio_rec_buffer_state = BUFFER_OFFSET_NONE;
         /* Copy recorded 2nd half block */
         c2_passthru((short*)audio_buffer_out_B, (short*)audio_buffer_in_B);
-        printf("\r\n");
 
         svc_uart();
     } // .. while(1)

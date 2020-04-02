@@ -111,16 +111,43 @@ int8_t pressed_audiorate = -1;
 #define AUDIO_RATE_SELECT_BASE_X        230
 #define AUDIO_RATE_SELECT_STEP_Y        32
 
+#ifndef MIC_DISABLE
+static bool pressed_micRight;
+static bool pressed_micLeft;
+#endif /* !MIC_DISABLE */
+bool micRightEn;
+bool micLeftEn;
+
+int vocoder_rate_state;
+int audio_rate_state;
+
+#define MIC_LEFT_Y      (BSP_LCD_GetYSize() - 24)
 
 static void
-Touchscreen_DrawBackground (uint8_t vc_state, uint8_t ar_state)
+Touchscreen_DrawBackground(bool touched, uint16_t tx, uint16_t ty)
 {
-    unsigned y = SELECT_BASE_Y , i = 0;
-    unsigned x = BPS_SELECT_BASE_X;
+    unsigned _y = SELECT_BASE_Y , i = 0;
+    unsigned _x = BPS_SELECT_BASE_X;
+
+    if (touched) {
+        if (tx < AUDIO_RATE_SELECT_BASE_X) {
+            vocoder_rate_state = ty - SELECT_BASE_Y;
+            vocoder_rate_state /= BPS_SELECT_STEP_Y;
+            if (tx > (BPS_SELECT_BASE_X + BPS_SELECT_STEP_X)) {
+                vocoder_rate_state += 6;    // next column
+            }
+            printf("vocoder_rate_state:%d\r\n", vocoder_rate_state);
+        } else {
+            /* audio rate touch selection */
+            audio_rate_state = ty - SELECT_BASE_Y;
+            audio_rate_state /= AUDIO_RATE_SELECT_STEP_Y;
+            printf("audio_rate_state:%d\r\n", audio_rate_state);
+        }
+    }
 
     BSP_LCD_SetFont(&Font24);
     while (modeStr[i] != NULL) {
-        if (vc_state == i) {
+        if (vocoder_rate_state == i) {
             BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
             BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
             if (modeStr[i][0] != 0) // zero-length modes dont exist
@@ -129,18 +156,18 @@ Touchscreen_DrawBackground (uint8_t vc_state, uint8_t ar_state)
             BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
             BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
         }
-        BSP_LCD_DisplayStringAt(x, y, (uint8_t *)modeStr[i], LEFT_MODE);
-        y += BPS_SELECT_STEP_Y;
+        BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)modeStr[i], LEFT_MODE);
+        _y += BPS_SELECT_STEP_Y;
         if (i == 5) {
-            y = SELECT_BASE_Y;
-            x += BPS_SELECT_STEP_X;    // next column
+            _y = SELECT_BASE_Y;
+            _x += BPS_SELECT_STEP_X;    // next column
         }
         i++;
     }
 
     /* audio rate: */
-    y = SELECT_BASE_Y;
-    x = AUDIO_RATE_SELECT_BASE_X;
+    _y = SELECT_BASE_Y;
+    _x = AUDIO_RATE_SELECT_BASE_X;
     for (i = 0; i < 4; i++) {
         const char *str;
         switch (i) {
@@ -150,7 +177,7 @@ Touchscreen_DrawBackground (uint8_t vc_state, uint8_t ar_state)
             case 3: str = "8k"; break;
         }
 
-        if (i == ar_state) {
+        if (i == audio_rate_state) {
             BSP_LCD_SetTextColor(LCD_COLOR_RED);
             pressed_audiorate = i;
         } else {
@@ -165,11 +192,57 @@ Touchscreen_DrawBackground (uint8_t vc_state, uint8_t ar_state)
         else
             BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
 
-        //printf("draw at %u,%u %s\r\n", x, y, str);
-        BSP_LCD_DisplayStringAt(x, y, (uint8_t *)str, LEFT_MODE);
-        y += AUDIO_RATE_SELECT_STEP_Y;
+        BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)str, LEFT_MODE);
+        _y += AUDIO_RATE_SELECT_STEP_Y;
     }
-}
+
+#ifndef MIC_DISABLE
+    /* micEn X base */
+    _x = BSP_LCD_GetXSize()-135;
+
+    /* microphone right enable */
+    _y = BSP_LCD_GetYSize() - 52;
+    if (micRightEn)
+        BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
+    else
+        BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+    if (touched) {
+        if (ty < MIC_LEFT_Y && ty > _y && tx >= _x) {
+            pressed_micRight = true;
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        }
+    } else
+        pressed_micRight = false;
+
+    if (micRightEn)
+        BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
+    else
+        BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+
+    BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)"micRight", LEFT_MODE);
+
+    /* microphone left enable */
+    _y = MIC_LEFT_Y;
+    if (micLeftEn)
+        BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
+    else
+        BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+    if (touched) {
+        if (ty >= MIC_LEFT_Y && tx >= _x) {
+            pressed_micLeft = true;
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        }
+    } else {
+        pressed_micLeft = false;
+    }
+    if (micLeftEn)
+        BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
+    else
+        BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+
+    BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)"micLeft", LEFT_MODE);
+#endif /* !MIC_DISABLE */
+} // ..Touchscreen_DrawBackground()
 
 /**
   * @brief  Main program
@@ -178,10 +251,7 @@ Touchscreen_DrawBackground (uint8_t vc_state, uint8_t ar_state)
   */
 int main(void)
 {
-    const char* str;
     TS_StateTypeDef  TS_State;
-    int vocoder_rate_state;
-    int audio_rate_state;
     uint8_t status, lcd_status = LCD_OK;
 
     /* Enable the CPU Cache */
@@ -238,75 +308,95 @@ int main(void)
     }
     else
     {
+#ifdef MIC_DISABLE
+    #if (MIC_DISABLE==MIC_LEFT)
+        micRightEn = true;
+        micLeftEn = false;
+    #elif(MIC_DISABLE==MIC_RIGHT)
+        micRightEn = false;
+        micLeftEn = true;
+    #endif
+#else
+        micRightEn = true;  // default mic enabled
+        micLeftEn = true;   // default mic enabled
+#endif /* !MIC_DISABLE */
         vocoder_rate_state = -1;
         audio_rate_state = -1;
-        Touchscreen_DrawBackground(vocoder_rate_state, audio_rate_state);
+        Touchscreen_DrawBackground(false, 0, 0);
     }
     
     while (c2 == NULL) {
         uint16_t x, y;
-        int vcrate_idx = -1;
-        int audiorate_idx = -1;
         if (status == TS_OK) {
             BSP_TS_GetState(&TS_State);
             if (TS_State.touchDetected) {
                 x = TS_State.touchX[0];
                 y = TS_State.touchY[0];
                 printf("touch x=%u, y=%u\r\n", x, y);
-                if (x < AUDIO_RATE_SELECT_BASE_X) {
-                    vcrate_idx = y - SELECT_BASE_Y;
-                    vcrate_idx /= BPS_SELECT_STEP_Y;
-                    if (x > (BPS_SELECT_BASE_X + BPS_SELECT_STEP_X)) {
-                        vcrate_idx += 6;    // next column
-                    }
-                    printf("vcrate_idx:%d\r\n", vcrate_idx);
-                } else {
-                    /* audio rate touch selection */
-                    audiorate_idx = y - SELECT_BASE_Y;
-                    audiorate_idx /= AUDIO_RATE_SELECT_STEP_Y;
-                    printf("audiorate_idx :%d\r\n", audiorate_idx);
+                Touchscreen_DrawBackground(true, x, y);
+            } else {
+                if (pressed_bitrate != -1) { /* release on vocoder rate selection */
+                    /* Set LCD Foreground Layer  */
+                    BSP_LCD_SelectLayer(LTDC_ACTIVE_LAYER);
+                    BSP_LCD_SetFont(&LCD_DEFAULT_FONT);
+                    /* Clear the LCD */
+                    BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+                    BSP_LCD_Clear(LCD_COLOR_WHITE);
+                    BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
+                    c2 = codec2_create(pressed_bitrate);
+                    if (c2 == NULL) {
+                        BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"codec2_create() failed", CENTER_MODE);
+                        pressed_bitrate = -1;
+                        HAL_Delay(500);
+                        vocoder_rate_state = -1;
+                    } else
+                        _selected_bitrate = pressed_bitrate;
+                } else if (pressed_audiorate != -1) {   /* release on audio rate selection */
+                    selected_audiorate = pressed_audiorate;
+                    printf("selected_audiorate:%u\r\n", selected_audiorate);
                 }
-                Touchscreen_DrawBackground(vcrate_idx, audiorate_idx);
-            } else if (pressed_bitrate != -1) { /* release on vocoder rate selection */
-                /* Set LCD Foreground Layer  */
-                BSP_LCD_SelectLayer(LTDC_ACTIVE_LAYER);
-                BSP_LCD_SetFont(&LCD_DEFAULT_FONT);
-                /* Clear the LCD */
-                BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
-                BSP_LCD_Clear(LCD_COLOR_WHITE);
-                BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
-                c2 = codec2_create(pressed_bitrate);
-                if (c2 == NULL) {
-                    BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"codec2_create() failed", CENTER_MODE);
-                    pressed_bitrate = -1;
-                    HAL_Delay(500);
-                    vocoder_rate_state = -1;
-                    Touchscreen_DrawBackground(vocoder_rate_state, -1);
-                } else
-                    _selected_bitrate = pressed_bitrate;
-            } else if (pressed_audiorate != -1) {   /* release on audio rate selection */
-                selected_audiorate = pressed_audiorate;
-                printf("selected_audiorate:%u\r\n", selected_audiorate);
-                Touchscreen_DrawBackground(-1, -1);
-            }
-        }
+#ifndef MIC_DISABLE
+                if (pressed_micRight) {
+                    micRightEn ^= true;
+                    printf("micRightEn:%d\r\n", micRightEn);
+                    pressed_micRight = false;
+                } else if (pressed_micLeft) {
+                    micLeftEn ^= true;
+                    printf("micLeftEn:%d\r\n", micLeftEn);
+                    pressed_micLeft = false;
+                }
+#endif /* !MIC_DISABLE */
+                Touchscreen_DrawBackground(false, 0, 0);
+            } // ..if (!TS_State.touchDetected)
+        } // ..if (status == TS_OK)
         HAL_Delay(10);
-    } // ..while ()
+    } // ..while (c2 == NULL)
 
-    switch (_selected_bitrate) {
-        case CODEC2_MODE_3200: str = "3200"; break;
-        case CODEC2_MODE_2400: str = "2400"; break;
-        case CODEC2_MODE_1600: str = "1600"; break;
-        case CODEC2_MODE_1400: str = "1400"; break;
-        case CODEC2_MODE_1300: str = "1300"; break;
-        case CODEC2_MODE_1200: str = "1200"; break;
-        case CODEC2_MODE_700C: str = "700C"; break;
-        case CODEC2_MODE_450: str = "450"; break;
-        case CODEC2_MODE_450PWB: str = "450PWB"; break;
-        default: str = NULL;
+    /* Clear the LCD */
+    BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+    BSP_LCD_Clear(LCD_COLOR_WHITE);
+    BSP_LCD_SetFont(&Font24);
+    BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+
+    {
+        char buf[48];
+        const char* str;
+        switch (_selected_bitrate) {
+            case CODEC2_MODE_3200: str = "3200"; break;
+            case CODEC2_MODE_2400: str = "2400"; break;
+            case CODEC2_MODE_1600: str = "1600"; break;
+            case CODEC2_MODE_1400: str = "1400"; break;
+            case CODEC2_MODE_1300: str = "1300"; break;
+            case CODEC2_MODE_1200: str = "1200"; break;
+            case CODEC2_MODE_700C: str = "700C"; break;
+            case CODEC2_MODE_450: str = "450"; break;
+            case CODEC2_MODE_450PWB: str = "450PWB"; break;
+            default: str = NULL;
+        }
+        sprintf(buf, "%c  %s  %c", micLeftEn ? 'L' : ' ', str, micRightEn ? 'R' : ' ');
+        BSP_LCD_DisplayStringAt(0, 10, (uint8_t *)buf, CENTER_MODE);
     }
 
-    BSP_LCD_DisplayStringAt(0, 10, (uint8_t *)str, CENTER_MODE);
     nsamp = codec2_samples_per_frame(c2);
     nsamp_x2 = nsamp * 2;
     printf("nsamp:%u\r\n", nsamp);

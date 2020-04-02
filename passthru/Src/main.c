@@ -66,8 +66,17 @@ const unsigned audioRates[] =
 };
 int audioRate_idx;
 int pressed_audioRate;
-bool pressed_8kresamp;
+
+static bool pressed_8kresamp;
 bool resamp8k;
+
+#ifndef MIC_DISABLE
+static bool pressed_micEn_left;
+static bool pressed_micEn_right;
+#endif /* !MIC_DISABLE */
+bool micRightEn;
+bool micLeftEn;
+
 uint8_t resamp_ratio;
 
 const unsigned SELECT_BASE_Y = 50;
@@ -76,10 +85,63 @@ const unsigned SELECT_STEP_Y = 28;
 const unsigned SELECT_BASE_X = 20;
 const unsigned SELECT_STEP_X = 140;
 
+#define RESAMP8K_Y      (BSP_LCD_GetYSize()-24)
+
+#define MIC_LEFT_X      (BSP_LCD_GetXSize()-270)
+#define MIC_RIGHT_X     (BSP_LCD_GetXSize()-135)
+#define MIC_Y           (BSP_LCD_GetYSize()-72)
+
+static void Touchscreen_DrawBackground_micEnLeft (bool pressed, uint16_t tx, uint16_t ty)
+{
+#ifndef MIC_DISABLE
+    if (pressed) {
+        pressed_micEn_left = tx > MIC_LEFT_X && tx < MIC_RIGHT_X && ty >= MIC_Y && ty < RESAMP8K_Y;
+    }
+    if (micLeftEn) {
+        if (pressed_micEn_left && pressed)
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        else
+            BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
+        BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
+    } else {
+        if (pressed_micEn_left && pressed)
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        else
+            BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+        BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+    }
+    BSP_LCD_DisplayStringAt(MIC_LEFT_X, MIC_Y, (uint8_t *)"micLeft", LEFT_MODE);
+#endif /* !MIC_DISABLE */
+}
+static void Touchscreen_DrawBackground_micEnRight (bool pressed, uint16_t tx, uint16_t ty)
+{
+#ifndef MIC_DISABLE
+    if (pressed) {
+        pressed_micEn_right = tx > MIC_RIGHT_X && ty >= MIC_Y && ty < RESAMP8K_Y;
+    }
+
+    if (micRightEn) {
+        if (pressed_micEn_right && pressed)
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        else
+            BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
+        BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
+    } else {
+        if (pressed_micEn_right && pressed)
+            BSP_LCD_SetTextColor(LCD_COLOR_RED);
+        else
+            BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
+        BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
+    }
+
+    BSP_LCD_DisplayStringAt(MIC_RIGHT_X, MIC_Y, (uint8_t *)"micRight", LEFT_MODE);
+#endif /* !MIC_DISABLE */
+}
+
 static void Touchscreen_DrawBackground_resamp (bool pressed, uint16_t tx, uint16_t ty)
 {
     if (pressed)
-        pressed_8kresamp = ty >= BSP_LCD_GetYSize()-24;
+        pressed_8kresamp = ty >= RESAMP8K_Y;
 
     if (resamp8k) {
         if (pressed_8kresamp && pressed)
@@ -95,7 +157,7 @@ static void Touchscreen_DrawBackground_resamp (bool pressed, uint16_t tx, uint16
         BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
     }
 
-    BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize()-24, (uint8_t *)"8k resample", RIGHT_MODE);
+    BSP_LCD_DisplayStringAt(0, RESAMP8K_Y, (uint8_t *)"8k resample", RIGHT_MODE);
 }
 
 static void
@@ -189,6 +251,20 @@ int main(void)
     /* Configure the User Button in GPIO Mode */
     BSP_PB_Init(BUTTON_KEY, BUTTON_MODE_GPIO);
 
+    /* deafault microphone enables */
+#ifdef MIC_DISABLE
+    #if (MIC_DISABLE==MIC_LEFT)
+        micRightEn = true;
+        micLeftEn = false;
+    #elif(MIC_DISABLE==MIC_RIGHT)
+        micRightEn = false;
+        micLeftEn = true;
+    #endif
+#else
+        micRightEn = true;  // default mic enabled
+        micLeftEn = true;   // default mic enabled
+#endif /* !MIC_DISABLE */
+
     status = BSP_TS_Init(BSP_LCD_GetXSize(), BSP_LCD_GetYSize());
 
     if (status != TS_OK)
@@ -202,7 +278,9 @@ int main(void)
     {
         state = -1;
         Touchscreen_DrawBackground(state);
-        Touchscreen_DrawBackground_resamp (false, 0, 0);
+        Touchscreen_DrawBackground_resamp(false, 0, 0);
+        Touchscreen_DrawBackground_micEnLeft(false, 0, 0);
+        Touchscreen_DrawBackground_micEnRight(false, 0, 0);
     }
 
     pressed_audioRate = -1;
@@ -225,6 +303,8 @@ int main(void)
                     Touchscreen_DrawBackground(I);
                 }
                 Touchscreen_DrawBackground_resamp(true, x, y);
+                Touchscreen_DrawBackground_micEnLeft(true, x, y);
+                Touchscreen_DrawBackground_micEnRight(true, x, y);
             } else if (pressed_audioRate != -1) {
                 printf("release %d\r\n", pressed_audioRate);
                 /* Set LCD Foreground Layer  */
@@ -236,13 +316,27 @@ int main(void)
                 BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
 
                 audioRate_idx = pressed_audioRate;
-            } else if (pressed_8kresamp) {
+            }
+#ifndef MIC_DISABLE
+            if (pressed_micEn_right) {
+                micRightEn ^= true;
+                printf("released micEn_right %s\r\n", micRightEn ? "on" : "off");
+                pressed_micEn_right = false;
+                Touchscreen_DrawBackground_micEnRight(false, 0, 0);
+            } else if (pressed_micEn_left) {
+                micLeftEn ^= true;
+                printf("released micEn_left %s\r\n", micLeftEn ? "on" : "off");
+                pressed_micEn_left = false;
+                Touchscreen_DrawBackground_micEnLeft(false, 0, 0);
+            }
+#endif /* !MIC_DISABLE */
+            if (pressed_8kresamp) {
                 resamp8k ^= true;
                 printf("released_8k %s\r\n", resamp8k ? "on" : "off");
                 pressed_8kresamp = false;
                 Touchscreen_DrawBackground_resamp(false, 0, 0);
             }
-        }
+        } // ..if (status == TS_OK)
         HAL_Delay(10);
     } // ..while ()
 

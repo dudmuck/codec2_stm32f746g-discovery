@@ -122,6 +122,12 @@ extern uint8_t rxchar;
 #endif /* __MAIN_H */
 
 extern bool resamp8k;
+
+#define MIC_RIGHT       0xcafe
+#define MIC_LEFT        0xf00d
+extern bool micRightEn;
+extern bool micLeftEn;
+
 extern uint8_t resamp_ratio;
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

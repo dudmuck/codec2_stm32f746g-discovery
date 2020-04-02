@@ -209,6 +209,7 @@ set(SECOND_SRCS
 
 add_mapped_executable(passthru ${SECOND_SRCS} ${SYSTEM_SRCS})
 target_link_libraries(passthru stm32746gdiscovery stm32f7)
+#target_compile_definitions(passthru PRIVATE -DMIC_DISABLE=MIC_RIGHT)
 target_include_directories(passthru PRIVATE ${PROJECT_SOURCE_DIR}/passthru/Inc)
 elf2bin(passthru)
 elf2hex(passthru)
@@ -223,6 +224,7 @@ set(VP_SRCS
 
 add_mapped_executable(vocoder_passthru ${VP_SRCS} ${SYSTEM_SRCS})
 target_link_libraries(vocoder_passthru stm32746gdiscovery stm32f7 codec2)
+#target_compile_definitions(vocoder_passthru PRIVATE -DMIC_DISABLE=MIC_RIGHT)
 target_include_directories(vocoder_passthru PRIVATE ${PROJECT_SOURCE_DIR}/vocoder_passthru/Inc)
 elf2bin(vocoder_passthru)
 elf2hex(vocoder_passthru)
@@ -243,6 +245,7 @@ set(LORA_XCVR_SRCS
 
 add_mapped_executable(lora_transceiver ${LORA_XCVR_SRCS} ${SYSTEM_SRCS})
 target_link_libraries(lora_transceiver stm32746gdiscovery stm32f7 codec2)
+#target_compile_definitions(lora_transceiver PRIVATE -DMIC_DISABLE=MIC_RIGHT)
 target_include_directories(lora_transceiver PRIVATE
     ${PROJECT_SOURCE_DIR}/lora_transceiver/Inc
     ${PROJECT_SOURCE_DIR}/sx12xx_hal
