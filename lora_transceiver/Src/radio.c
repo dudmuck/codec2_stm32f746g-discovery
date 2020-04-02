@@ -112,7 +112,7 @@ static void spi_begin()
     HAL_GPIO_Init(SPIx_MOSI_GPIO_PORT, &GPIO_InitStructure);
     
     SpiHandle.Instance               = SPIx;
-    SpiHandle.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+    SpiHandle.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
     SpiHandle.Init.Direction         = SPI_DIRECTION_2LINES;
     SpiHandle.Init.CLKPhase          = SPI_PHASE_1EDGE;
     SpiHandle.Init.CLKPolarity       = SPI_POLARITY_LOW;

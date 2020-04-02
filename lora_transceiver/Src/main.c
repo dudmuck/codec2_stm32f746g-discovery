@@ -654,10 +654,6 @@ void lcd_print_rssi_snr(float rssi, float snr)
 
 void rxDoneCB(uint8_t size, float rssi, float snr)
 {
-    printf("rxDone %ubytes %fdBm %fdB\r\n", size, (double)rssi, (double)snr);
-    if (size == 255 && rssi == -127.5) {
-        for (;;) asm("nop");
-    }
     rx_size = size;
     rx_rssi = rssi;
     rx_snr = snr;

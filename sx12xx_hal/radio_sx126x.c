@@ -47,11 +47,9 @@ int Send_sx126x(uint8_t size/*, timestamp_t maxListenTime, timestamp_t channelFr
     SX126x_xfer(OPCODE_SET_BUFFER_BASE_ADDR, 2, 0, buf);
  
     if (pktType == PACKET_TYPE_GFSK) {
-        printf("Sendgfsklen%u ", size);
         pp.gfsk.PayloadLength = size;
         SX126x_xfer(OPCODE_SET_PACKET_PARAMS, 8, 0, pp.buf);
     } else if (pktType == PACKET_TYPE_LORA) {
-        printf("SendLoRaLen%u ", size);
         pp.lora.PayloadLength = size;
         SX126x_xfer(OPCODE_SET_PACKET_PARAMS, 6, 0, pp.buf);
     }

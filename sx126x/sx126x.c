@@ -33,8 +33,7 @@ void SX126x_start_tx(uint8_t pktLen)
         while (BUSY)
             ;
  
-        printf("txlen%u ", pktLen);
-        ASSERT_SX126X_NSS; // nss = 0;
+        ASSERT_SX126X_NSS;
 
         spi_transfer(OPCODE_WRITE_BUFFER);
         spi_transfer(0);   // offset
@@ -64,16 +63,15 @@ void SX126x_xfer(uint8_t opcode, uint8_t wlen, uint8_t rlen, uint8_t* ptr)
     const uint8_t* rstop;
     uint8_t nop = 0;
  
-    //vcp_printf("xfer%02x\r\n", opcode);
     if (sleeping) {
-        ASSERT_SX126X_NSS; // nss = 0;
+        ASSERT_SX126X_NSS;
         while (BUSY)
             ;
         sleeping = false;
     } else {
         while (BUSY)
             ;
-        ASSERT_SX126X_NSS; // nss = 0;
+        ASSERT_SX126X_NSS;
     }
  
 
@@ -335,13 +333,12 @@ void SX126x_ReadBuffer(uint8_t size, uint8_t offset)
     while (BUSY)
         ;
  
-    ASSERT_SX126X_NSS; // nss = 0;
+    ASSERT_SX126X_NSS;
  
     spi_transfer(OPCODE_READ_BUFFER);
     spi_transfer(offset);
     spi_transfer(0);   // NOP
     i = 0;
-    //printf("SX126x_ReadBuffer to %p\r\n", SX126x_rx_buf);
     for (i = 0; i < size; i++) {
         SX126x_rx_buf[i] = spi_transfer(0);
     }

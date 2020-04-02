@@ -520,8 +520,8 @@ void parse_rx()
     static short from_decoderA[320];
     static short from_decoderB[320];
 
-    fdb = 0;
     if (currently_decoding == 0) {
+        fdb = 0;
         start_tone();
         currently_decoding = 1;
     } else {
@@ -529,7 +529,6 @@ void parse_rx()
         terminate_spkr_at_tick = 0;
     }
 
-    printf("parse_rx size%u ", rx_size);
     if (selected_bitrate == CODEC2_MODE_700C || selected_bitrate == CODEC2_MODE_1300) {
         for (n = 0; n < rx_size; n += _bytes_per_frame) {
             unsigned i;
@@ -663,7 +662,6 @@ void parse_rx()
             put_spkr();
         }
     }
-    printf("\r\n");
 
     if (rx_size < lora_payload_length) {
         end_rx_tone();
