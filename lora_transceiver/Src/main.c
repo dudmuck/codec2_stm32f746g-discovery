@@ -111,9 +111,6 @@ const char * const modeStr[] = {
     /* 6 */ "",
     /* 7 */ "",
     /* 8 */ "700C",
-    /* 9 */ "",
-    /*10 */ "450",
-    /*10 */ "450PWB",
     NULL
 };
 
@@ -441,18 +438,6 @@ int main(void)
                 inter_pkt_timeout = 40;
                 str = "700C";
                 break;
-            case CODEC2_MODE_450:
-                lora_payload_length = 36;
-                sf_at_500KHz = 12;
-                inter_pkt_timeout = 70;
-                str = "450";
-                break;
-            case CODEC2_MODE_450PWB:
-                lora_payload_length = 36;
-                sf_at_500KHz = 12;
-                inter_pkt_timeout = 70;
-                str = "450PWB";
-                break;
             default: str = NULL;
         } // ..switch (selected_bitrate)
 
@@ -469,9 +454,6 @@ int main(void)
     if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
         _bytes_per_frame = codec2_bits_per_frame(c2) / 4;       // dual frame for integer number of bytes
         frame_length_bytes = _bytes_per_frame >> 1;
-    } else if (selected_bitrate == CODEC2_MODE_450 || selected_bitrate == CODEC2_MODE_450PWB) {
-        _bytes_per_frame = codec2_bits_per_frame(c2) / 2;       // quad frame for integer number of bytes
-        frame_length_bytes = _bytes_per_frame >> 2;
     } else {
         _bytes_per_frame = codec2_bits_per_frame(c2) / 8;
     }

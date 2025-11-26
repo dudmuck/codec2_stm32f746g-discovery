@@ -91,9 +91,6 @@ const char * const modeStr[] = {
     /* 6 */ "",
     /* 7 */ "",
     /* 8 */ "700C",
-    /* 9 */ "",
-    /*10 */ "450",
-    /*10 */ "450PWB",
     NULL
 };
 
@@ -389,8 +386,6 @@ int main(void)
             case CODEC2_MODE_1300: str = "1300"; break;
             case CODEC2_MODE_1200: str = "1200"; break;
             case CODEC2_MODE_700C: str = "700C"; break;
-            case CODEC2_MODE_450: str = "450"; break;
-            case CODEC2_MODE_450PWB: str = "450PWB"; break;
             default: str = NULL;
         }
         sprintf(buf, "%c  %s  %c", micLeftEn ? 'L' : ' ', str, micRightEn ? 'R' : ' ');

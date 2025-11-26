@@ -35,25 +35,26 @@ set(CODEBOOKSD
 )
 
 set(CODEBOOKSJVM
-    ${D}/lspjvm1.txt
-    ${D}/lspjvm2.txt
-    ${D}/lspjvm3.txt
+    ${D}/lspjmv1.txt
+    ${D}/lspjmv2.txt
+    ${D}/lspjmv3.txt
 )
 
-set(CODEBOOKSMEL
-    ${D}/mel1.txt
-    ${D}/mel2.txt
-    ${D}/mel3.txt
-    ${D}/mel4.txt
-    ${D}/mel5.txt
-    ${D}/mel6.txt
-)
-
-set(CODEBOOKSLSPMELVQ
-    ${D}/lspmelvq1.txt
-    ${D}/lspmelvq2.txt
-    ${D}/lspmelvq3.txt
-)
+# Removed - files no longer exist in updated codec2
+#set(CODEBOOKSMEL
+#    ${D}/mel1.txt
+#    ${D}/mel2.txt
+#    ${D}/mel3.txt
+#    ${D}/mel4.txt
+#    ${D}/mel5.txt
+#    ${D}/mel6.txt
+#)
+#
+#set(CODEBOOKSLSPMELVQ
+#    ${D}/lspmelvq1.txt
+#    ${D}/lspmelvq2.txt
+#    ${D}/lspmelvq3.txt
+#)
 
 set(CODEBOOKSGE ${D}/gecb.txt)
 
@@ -93,8 +94,12 @@ if(CMAKE_CROSSCOMPILING)
 else(CMAKE_CROSSCOMPILING)
 # Build code generator binaries. These do not get installed.
     # generate_codebook
-    add_executable(generate_codebook generate_codebook.c)
-    target_link_libraries(generate_codebook ${CMAKE_REQUIRED_LIBRARIES})
+    add_executable(generate_codebook codec2/src/generate_codebook.c)
+    # Override ARM flags for native build tool
+    set_target_properties(generate_codebook PROPERTIES
+        COMPILE_FLAGS "-Wall -std=gnu11 -O2"
+        LINK_FLAGS "")
+    target_link_libraries(generate_codebook ${CMAKE_REQUIRED_LIBRARIES} m)
     # Make native builds available for cross-compiling.
     export(TARGETS generate_codebook
         FILE ${CMAKE_BINARY_DIR}/ImportExecutables.cmake)
@@ -118,24 +123,25 @@ add_custom_command(
 # codebookjvm.c
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/codebookjvm.c
-    COMMAND generate_codebook lsp_cbjvm ${CODEBOOKSJVM} > ${CMAKE_CURRENT_BINARY_DIR}/codebookjvm.c
+    COMMAND generate_codebook lsp_cbjmv ${CODEBOOKSJVM} > ${CMAKE_CURRENT_BINARY_DIR}/codebookjvm.c
     DEPENDS generate_codebook ${CODEBOOKSJVM}
 )
 
 
-# codebookmel.c
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/codebookmel.c
-    COMMAND generate_codebook mel_cb ${CODEBOOKSMEL} > ${CMAKE_CURRENT_BINARY_DIR}/codebookmel.c
-    DEPENDS generate_codebook ${CODEBOOKSMEL}
-)
-
-# codebooklspmelvq.c
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/codebooklspmelvq.c
-    COMMAND generate_codebook lspmelvq_cb ${CODEBOOKSLSPMELVQ} > ${CMAKE_CURRENT_BINARY_DIR}/codebooklspmelvq.c
-    DEPENDS generate_codebook ${CODEBOOKSLSPMELVQ}
-)
+# Removed - codebook files no longer exist in updated codec2
+## codebookmel.c
+#add_custom_command(
+#    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/codebookmel.c
+#    COMMAND generate_codebook mel_cb ${CODEBOOKSMEL} > ${CMAKE_CURRENT_BINARY_DIR}/codebookmel.c
+#    DEPENDS generate_codebook ${CODEBOOKSMEL}
+#)
+#
+## codebooklspmelvq.c
+#add_custom_command(
+#    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/codebooklspmelvq.c
+#    COMMAND generate_codebook lspmelvq_cb ${CODEBOOKSLSPMELVQ} > ${CMAKE_CURRENT_BINARY_DIR}/codebooklspmelvq.c
+#    DEPENDS generate_codebook ${CODEBOOKSLSPMELVQ}
+#)
 
 # codebookge.c
 add_custom_command(

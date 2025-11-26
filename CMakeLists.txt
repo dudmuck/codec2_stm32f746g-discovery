@@ -6,6 +6,10 @@
 # mailing list: https://lists.sourceforge.net/lists/listinfo/freetel-codec2
 #
 set(ARM_GCC_BIN "" CACHE STRING "Path to the bin directory of your arm-eabi-none-gcc (optional)")
+# Set default toolchain file for cross-compilation (must be before project())
+if(NOT CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/codec2/stm32/cmake/STM32_Toolchain.cmake" CACHE FILEPATH "Toolchain file" FORCE)
+endif()
 project(stm32f7 C ASM)
 
 if(CMAKE_CROSSCOMPILING)
@@ -15,6 +19,27 @@ else()
 endif()
 
 cmake_minimum_required(VERSION 2.8)
+
+# Generate GIT_HASH for freedv_api.c
+if(EXISTS ${CMAKE_SOURCE_DIR}/.git)
+    find_package(Git)
+    if(Git_FOUND)
+        execute_process(
+            COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            RESULT_VARIABLE res
+            OUTPUT_VARIABLE PROJECT_HASH
+            ERROR_QUIET
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        message(STATUS "Project current git hash: ${PROJECT_HASH}")
+        add_definitions(-DGIT_HASH="${PROJECT_HASH}")
+    else()
+        message(WARNING "Git not found. Can not determine current commit hash.")
+        add_definitions(-DGIT_HASH="Unknown")
+    endif()
+else()
+    add_definitions(-DGIT_HASH="None")
+endif()
 
 include(gencodebooks.cmake)
 
@@ -34,12 +59,12 @@ endif("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
 ###################################################
 
 set(FLOAT_TYPE "hard" CACHE STRING "Floating point: defaults to hard.")
-set(CMAKE_TOOLCHAIN_FILE "../stm32/cmake/STM32_Toolchain.cmake" CACHE STRING "Toolchain defs")
 
 ###################################################
 
 # Set default C flags.
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -std=gnu11 -mlittle-endian -mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mthumb-interwork -u_printf_float -fmessage-length=0 -ffunction-sections -fdata-sections -Os")
+#
 
 add_definitions(-DSTM32F746xx 
     -D__TARGET_CPU_CORTEX_M7_FP_SP
@@ -51,7 +76,7 @@ add_definitions(-DSTM32F746xx
 )
 
 if(FLOAT_TYPE STREQUAL "hard")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsingle-precision-constant -Wdouble-promotion -mfpu=fpv5-sp-d16 -mthumb -mfloat-abi=hard -D__FPU_PRESENT=1")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsingle-precision-constant -Wdouble-promotion -mfpu=fpv5-sp-d16 -mthumb -mfloat-abi=hard -D__FPU_PRESENT=1 -D__FPU_USED=1")
     #CFLAGS += -fsingle-precision-constant
 else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msoft-float")
@@ -143,7 +168,7 @@ configure_file ("${PROJECT_SOURCE_DIR}/codec2/cmake/version.h.in"
                 "${CODEC2_VERSION_PATH}/version.h" )
 
 
-set(CODEC2_SRC ../codec2/src)
+set(CODEC2_SRC codec2/src)
 set(CODEC2_GEN_CODEBOOK_SRC ../build/src)
 set(CODEC2_SRCS
 ${CODEC2_SRC}/lpc.c
@@ -171,7 +196,6 @@ ${CODEC2_SRC}/varicode.c
 ${CODEC2_SRC}/golay23.c
 ${CODEC2_SRC}/freedv_data_channel.c
 ${CODEC2_SRC}/newamp1.c
-${CODEC2_SRC}/newamp2.c
 ${CODEC2_SRC}/mbest.c
 ${CODEC2_SRC}/HRA_112_112.c
 ${CODEC2_SRC}/linreg.c

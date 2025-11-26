@@ -9,16 +9,15 @@ Each microphone on the board can be individually disabled by touch screen select
 ## QuickStart
 After cloning this repository:
 ```
-$ cd codec2
 $ git submodule init
 $ git submodule update --init --recursive
 ```
-Follow GCC install instructions here: [steps 2 and 4 for toolchain](https://github.com/drowe67/codec2/tree/master/stm32).
+Reminder that this retrieves STM32CubeF7, and its 1.1 Gbytes. Follow GCC install instructions here: [steps 2 and 4 for toolchain](https://github.com/drowe67/codec2/tree/main/stm32).
 ```
 (from root directory of this project)
 $ mkdir build
 $ cd build
-$ cmake .. -DCMAKE_TOOLCHAIN_FILE=../codec2/stm32/cmake/STM32_Toolchain.cmake
+$ cmake ..
 $ make
 ```
 Ensure gcc-arm is in your path prior to running cmake, if not delete your build directory and re-run cmake with gcc-arm in path.
