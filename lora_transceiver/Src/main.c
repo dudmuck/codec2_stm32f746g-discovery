@@ -50,7 +50,7 @@ volatile float rx_rssi;
 volatile float rx_snr;
 
 volatile uint32_t txStartAt;
-volatile uint32_t cycleStartAt;
+//yyy volatile uint32_t cycleStartAt;
 
 /* Private function prototypes -----------------------------------------------*/
 static void SystemClock_Config(void);

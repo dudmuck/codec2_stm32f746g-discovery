@@ -4,11 +4,12 @@
 
 #set(PERIPHLIBURL  http://www.st.com/st-web-ui/static/active/en/st_prod_software_internet/resource/technical/software/firmware)
 #set(PERIPHLIBZIP  stm32f4_dsp_stdperiph_lib.zip)
-set(PERIPHLIBVER    1.15.0)
-set(PERIPHLIBNAME   STM32Cube_FW_F7_V)
+#yyy set(PERIPHLIBVER    1.15.0)
+#yyy set(PERIPHLIBNAME   STM32Cube_FW_F7_V)
 
 if(NOT PERIPHLIBDIR)
-    set(PERIPHLIBDIR    ${CMAKE_SOURCE_DIR}/${PERIPHLIBNAME}${PERIPHLIBVER})
+	#yyy set(PERIPHLIBDIR    ${CMAKE_SOURCE_DIR}/${PERIPHLIBNAME}${PERIPHLIBVER})
+	set(PERIPHLIBDIR    ${CMAKE_CURRENT_LIST_DIR}/STM32CubeF7)
     message(STATUS "Using default path for StdPeriph Lib: ${PERIPHLIBDIR}")
 endif()
 
@@ -18,6 +19,7 @@ set(DSPLIB          ${PERIPHLIBDIR}/Drivers/CMSIS/DSP/Source)
 set(UTILITIES       ${PERIPHLIBDIR}/Utilities)
 set(MIDDLEWARES     ${PERIPHLIBDIR}/Middlewares)
 
+#message(SEND_ERROR "STM32F7LIB --> ${STM32F7LIB}")
 #add_definitions(-DUSE_STDPERIPH_DRIVER -DARM_MATH_CM4 -DHSE_VALUE=\(\(uint32_t\)8000000\))
 #include_directories(${STM32F4LIB}/inc ${STM32F4TEMPLATE}
 #    ${CMSIS}/Include ${CMSIS}/Device/ST/STM32F4xx/Include)
@@ -27,7 +29,6 @@ include_directories(${STM32F7LIB}/Inc
     ${CMSIS}/DSP/Include
     ${PERIPHLIBDIR}/Drivers/BSP/STM32746G-Discovery
     ${UTILITIES}/Log
-    
 )
 
 

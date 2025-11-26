@@ -20,7 +20,7 @@ static PacketParams_t pp;
 static bool paOff;
 static uint8_t loraTimeoutSymbols;
 
-const RadioEvents_t* RadioEvents;
+static const RadioEvents_t* RadioEvents;
 
 static void printOpMode_sx126x()
 {
