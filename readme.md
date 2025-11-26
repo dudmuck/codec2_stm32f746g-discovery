@@ -23,10 +23,10 @@ $ make
 Ensure gcc-arm is in your path prior to running cmake, if not delete your build directory and re-run cmake with gcc-arm in path.
 
 ### Flashing stm32f7-discovery
-https://github.com/texane/stlink
+~~https://github.com/texane/stlink
 providing address isnt needed when using st-flash with .hex files
 i.e: 
-``st-flash --format ihex write <project>.hex``
+``st-flash --format ihex write <project>.hex``~~ the bin files in build directory can be copied directly to the stlink usb drive on the discovery board.  passthru.bin or lora_transceiver.bin or vocoder_passthru.bin
 
 ## detailed operation of each project
 ### passthru
