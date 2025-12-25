@@ -17,7 +17,7 @@ Reminder that this retrieves STM32CubeF7, and its 1.1 Gbytes. Follow GCC install
 (from root directory of this project)
 $ mkdir build
 $ cd build
-$ cmake ..
+$ cmake ..   (for LR2021 add -DRADIO=LR2021)
 $ make
 ```
 Ensure gcc-arm is in your path prior to running cmake, if not delete your build directory and re-run cmake with gcc-arm in path.

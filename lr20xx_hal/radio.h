@@ -1,10 +1,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PA_OFF_DBM      -127
-
 typedef struct {
-       void (*DioPin_top_half)(void);
+    void (*DioPin_top_half)(void);
     /*!
      * \brief  Tx Done callback prototype.
      */
@@ -79,23 +77,11 @@ typedef struct {
 } lorahal_t;
 
 extern lorahal_t lorahal;
-#if 0
-void _Radio_Init(const RadioEvents_t*);
- 
-void _Radio_Standby(void);
-void _Radio_LoRaModemConfig(unsigned bwKHz, uint8_t sf, uint8_t cr);
-void _Radio_SetChannel(unsigned hz);
 
-void _Radio_set_tx_dbm(int8_t dbm);
- 
-               // preambleLen, fixLen, crcOn, invIQ
-void _Radio_LoRaPacketConfig(unsigned preambleLen, bool fixLen, bool crcOn, bool invIQ);
-int _Radio_Send(uint8_t size/*, timestamp_t maxListenTime, timestamp_t channelFreeTime, int rssiThresh*/);
-
-void _Radio_printOpMode(void);
-bool _Radio_service(void);
-void _Radio_Rx(unsigned timeout);
-#endif /* if 0 */
-
-void sethal_sx127x(void);
-void sethal_sx126x(void);
+void sethal_lr20xx(void);
+void step_bw_lr20xx(bool up);
+void step_sf_lr20xx(bool up);
+uint16_t get_bw_khz_lr20xx(void);
+uint8_t get_sf_lr20xx(void);
+uint32_t get_freq_hz_lr20xx(void);
+uint8_t get_chip_mode_lr20xx(void);

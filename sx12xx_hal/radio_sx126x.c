@@ -348,15 +348,6 @@ static void Rx_sx126x(unsigned timeout)
     }
 }
 
-void SetLoRaSymbolTimeout_sx126x(uint16_t symbs)
-{
-    if (SX126x_getPacketType() != PACKET_TYPE_LORA)
-        SX126x_setPacketType(PACKET_TYPE_LORA);
- 
-    loraTimeoutSymbols = symbs;
-    SX126x_xfer(OPCODE_SET_LORA_SYMBOL_TIMEOUT, 1, 0, &loraTimeoutSymbols);
-}
-
 static void PostConfigReadBack()
 {
     loraConfig0_t conf0;
@@ -405,7 +396,6 @@ void sethal_sx126x()
     lorahal.printOpMode = printOpMode_sx126x;
     lorahal.service = service_sx126x;
     lorahal.rx = Rx_sx126x;
-    lorahal.setLoRaSymbolTimeout = SetLoRaSymbolTimeout_sx126x;
     lorahal.irqTopHalf = SX126x_dio1_topHalf;
     lorahal.irq_pin = DIO1_PIN;
     lorahal.postcfgreadback = PostConfigReadBack;

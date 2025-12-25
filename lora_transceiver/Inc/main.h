@@ -165,8 +165,12 @@ typedef struct {
 } loraAppHal_t;
 extern loraAppHal_t appHal;
 extern volatile uint32_t cycleDur;
+#ifdef ENABLE_LR20XX
+void setAppHal_lr20xx(void);
+#else
 void setAppHal_sx126x(void);
 void setAppHal_sx127x(void);
+#endif
 
 void delay_ticks(unsigned t);
 

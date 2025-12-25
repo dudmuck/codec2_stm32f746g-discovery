@@ -231,7 +231,6 @@ void DIO1_IRQHandler(void)
     HAL_GPIO_EXTI_IRQHandler(DIO1_PIN);
 }
 
-
 void init_sx126x()
 {
     GPIO_InitTypeDef   GPIO_InitStructure;

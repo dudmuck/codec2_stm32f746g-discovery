@@ -1,10 +1,12 @@
 /* abstracted radio interface: works with any radio chip */
 #include "main.h"
 #include "radio.h"
+#ifndef ENABLE_LR20XX
 #include "sx126x.h"
 #include "sx127x.h"
 #include "pinDefs_sx126x.h"
 #include "pinDefs_sx127x.h"
+#endif /* !ENABLE_LR20XX */
 #include "pinDefs.h"
 
 lorahal_t lorahal;
@@ -133,10 +135,16 @@ static void spi_begin()
 
 void start_radio()
 {
+#ifndef ENABLE_LR20XX
     status_t status;
+#endif
 
     spi_begin();
-    
+
+#ifdef ENABLE_LR20XX
+    sethal_lr20xx();
+    setAppHal_lr20xx();
+#else
     SX126x_xfer(OPCODE_GET_STATUS, 0, 1, &status.octet);
 
     RegOpMode.octet = read_reg(REG_OPMODE);
@@ -151,6 +159,7 @@ void start_radio()
         sethal_sx126x();
         setAppHal_sx126x();
     }
+#endif
 
     lorahal.init(&rev);
 
@@ -164,6 +173,5 @@ void start_radio()
     lorahal.loRaPacketConfig(8, false, false, false);      // crcOff
 
     lorahal.postcfgreadback();
-    
 }
 

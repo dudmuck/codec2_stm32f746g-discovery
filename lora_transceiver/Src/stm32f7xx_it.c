@@ -22,6 +22,9 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f7xx_it.h"
+#ifdef ENABLE_LR20XX
+#include "pinDefs_lr20xx.h"
+#endif
 
 
 /** @addtogroup STM32F7xx_HAL_Examples
@@ -186,7 +189,14 @@ void EXTI2_IRQHandler(void)
   */
 void EXTI15_10_IRQHandler(void)
 {
-  /* Interrupt handler shared between SD_DETECT pin, USER_KEY button and touch screen interrupt */
+  /* Interrupt handler shared between DIO8 (LoRa), SD_DETECT pin, USER_KEY button and touch screen interrupt */
+#ifdef ENABLE_LR20XX
+  if (__HAL_GPIO_EXTI_GET_IT(DIO8_PIN) != RESET)
+  {
+    HAL_GPIO_EXTI_IRQHandler(DIO8_PIN);
+  }
+  else
+#endif
   if (__HAL_GPIO_EXTI_GET_IT(SD_DETECT_PIN) != RESET)
   {
     HAL_GPIO_EXTI_IRQHandler(SD_DETECT_PIN | TS_INT_PIN | AUDIO_IN_INT_GPIO_PIN);   /* SD detect event or touch screen interrupt */

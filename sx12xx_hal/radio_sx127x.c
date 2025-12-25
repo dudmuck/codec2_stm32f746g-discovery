@@ -316,17 +316,6 @@ bool service_sx127x()
     return false;
 }
 
-void SetLoRaSymbolTimeout_sx127x(uint16_t symbs)
-{
-    if (!RegOpMode.bits.LongRangeMode)
-        lora_enable();
- 
-    write_reg(REG_LR_SYMBTIMEOUTLSB, symbs & 0xff);
-    symbs >>= 8;
-    RegModemConfig2.sx1272bits.SymbTimeoutMsb = symbs;
-    write_reg(REG_LR_MODEMCONFIG2, RegModemConfig2.octet);
-}
-
 void sethal_sx127x()
 {
     lorahal.init = Init_sx127x;
@@ -339,7 +328,6 @@ void sethal_sx127x()
     lorahal.printOpMode = printOpMode_sx127x;
     lorahal.service = service_sx127x;
     lorahal.rx = Rx_sx127x;
-    lorahal.setLoRaSymbolTimeout = SetLoRaSymbolTimeout_sx127x;
     lorahal.irqTopHalf = SX127x_dio0_topHalf;
     lorahal.irq_pin = DIO0_PIN;
     lorahal.postcfgreadback = PostConfigReadBack;
