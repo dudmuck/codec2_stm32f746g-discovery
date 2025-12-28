@@ -85,3 +85,4 @@ uint16_t get_bw_khz_lr20xx(void);
 uint8_t get_sf_lr20xx(void);
 uint32_t get_freq_hz_lr20xx(void);
 uint8_t get_chip_mode_lr20xx(void);
+void print_streaming_timing_analysis(void);

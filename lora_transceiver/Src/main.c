@@ -481,6 +481,9 @@ int main(void)
     }
 
     printf("nsamp:%u, _bytes_per_frame:%u, frame_length_bytes:%u\r\n", nsamp, _bytes_per_frame, frame_length_bytes);
+
+    print_streaming_timing_analysis();
+
     AudioLoopback_demo();
 
 } // ..main()
