@@ -31,6 +31,7 @@ static lr20xx_radio_lora_mod_params_t lora_mod_params;
 volatile uint8_t tx_fifo_idx;        /* how much of tx_buf has been sent to FIFO */
 volatile uint8_t tx_total_size;      /* total packet size to transmit */
 volatile uint8_t streaming_tx_active; /* flag: streaming TX in progress */
+volatile uint8_t tx_buf_produced;    /* how much encoder has written to tx_buf */
 
 void Radio_txDoneBottom()
 {
@@ -674,6 +675,106 @@ void print_streaming_timing_analysis(void)
     }
 
     printf("=================================\r\n\r\n");
+}
+
+/* Streaming TX configuration - type defined in radio.h */
+streaming_config_t streaming_cfg;
+
+/* Calculate streaming TX configuration based on timing analysis */
+void calculate_streaming_config(void)
+{
+    extern uint8_t _bytes_per_frame;
+    extern uint8_t lora_payload_length;
+    extern uint8_t frames_per_sec;
+
+    lr20xx_radio_lora_pkt_params_t pkt = lora_pkt_params;
+    lr20xx_radio_lora_mod_params_t mod_test;
+    uint32_t pkt_toa_ms;
+    uint32_t codec2_production_time;
+    uint8_t codec2_frame_period_ms = 1000 / frames_per_sec;
+
+    streaming_cfg.frames_per_packet = lora_payload_length / _bytes_per_frame;
+
+    /* Calculate timing at current settings */
+    pkt.pld_len_in_bytes = lora_payload_length;
+    pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
+    codec2_production_time = streaming_cfg.frames_per_packet * codec2_frame_period_ms;
+    streaming_cfg.margin_ms = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+
+    if (streaming_cfg.margin_ms >= 0) {
+        /* Encoder keeps up - streaming feasible */
+        streaming_cfg.streaming_feasible = 1;
+        streaming_cfg.recommended_sf = lora_mod_params.sf;
+        streaming_cfg.max_payload_bytes = lora_payload_length;
+        /* Minimum 1 frame to start, but add margin for safety */
+        streaming_cfg.min_initial_frames = 1;
+    } else {
+        /* TX faster than encoder - need initial buffer or SF adjustment */
+        streaming_cfg.streaming_feasible = 0;
+
+        /* Find lowest SF that allows streaming */
+        mod_test = lora_mod_params;
+        for (uint8_t sf = 5; sf <= 12; sf++) {
+            uint32_t test_toa;
+            mod_test.sf = sf;
+            mod_test.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(sf, mod_test.bw);
+            test_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &mod_test);
+
+            if (test_toa <= codec2_production_time) {
+                streaming_cfg.recommended_sf = sf;
+                streaming_cfg.streaming_feasible = 1;
+                streaming_cfg.margin_ms = (int32_t)codec2_production_time - (int32_t)test_toa;
+                break;
+            }
+        }
+
+        if (!streaming_cfg.streaming_feasible) {
+            /* Even SF5 too slow - calculate required initial buffer */
+            /* We need enough initial frames to cover the deficit */
+            mod_test.sf = 5;
+            mod_test.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(5, mod_test.bw);
+            pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &mod_test);
+
+            /* Deficit per packet in ms */
+            int32_t deficit_ms = (int32_t)pkt_toa_ms - (int32_t)codec2_production_time;
+            /* Convert to frames: deficit_ms / codec2_frame_period_ms */
+            uint8_t deficit_frames = (deficit_ms + codec2_frame_period_ms - 1) / codec2_frame_period_ms;
+            /* Need all frames initially if streaming not feasible */
+            streaming_cfg.min_initial_frames = streaming_cfg.frames_per_packet;
+            streaming_cfg.recommended_sf = 5;  /* fastest possible */
+        } else {
+            streaming_cfg.min_initial_frames = 1;
+        }
+
+        streaming_cfg.max_payload_bytes = lora_payload_length;
+    }
+
+    printf("Streaming config: feasible=%u, min_init=%u frames, rec_sf=%u, margin=%ld ms\r\n",
+           streaming_cfg.streaming_feasible,
+           streaming_cfg.min_initial_frames,
+           streaming_cfg.recommended_sf,
+           streaming_cfg.margin_ms);
+}
+
+/* Apply recommended SF for streaming (call on both TX and RX) */
+uint8_t apply_streaming_sf(void)
+{
+    if (streaming_cfg.recommended_sf != lora_mod_params.sf) {
+        printf("Adjusting SF from %u to %u for streaming\r\n",
+               lora_mod_params.sf, streaming_cfg.recommended_sf);
+        lora_mod_params.sf = streaming_cfg.recommended_sf;
+        lora_mod_params.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(
+            lora_mod_params.sf, lora_mod_params.bw);
+        ASSERT_LR20XX_RC( lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params) );
+    }
+    return streaming_cfg.recommended_sf;
+}
+
+/* Get minimum initial bytes for streaming TX */
+uint8_t get_streaming_initial_bytes(void)
+{
+    extern uint8_t _bytes_per_frame;
+    return streaming_cfg.min_initial_frames * _bytes_per_frame;
 }
 
 void sethal_lr20xx()

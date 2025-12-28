@@ -95,3 +95,20 @@ uint8_t Send_lr20xx_fifo_continue(void);
 extern volatile uint8_t tx_fifo_idx;
 extern volatile uint8_t tx_total_size;
 extern volatile uint8_t streaming_tx_active;
+extern volatile uint8_t tx_buf_produced;  /* encoder updates this when new frame ready */
+
+/* Streaming TX configuration */
+void calculate_streaming_config(void);
+uint8_t apply_streaming_sf(void);
+uint8_t get_streaming_initial_bytes(void);
+
+/* Streaming config structure (read-only access) */
+typedef struct {
+    uint8_t min_initial_frames;
+    uint8_t recommended_sf;
+    uint8_t max_payload_bytes;
+    uint8_t frames_per_packet;
+    int32_t margin_ms;
+    uint8_t streaming_feasible;
+} streaming_config_t;
+extern streaming_config_t streaming_cfg;

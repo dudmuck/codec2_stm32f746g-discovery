@@ -485,6 +485,10 @@ int main(void)
 
     print_streaming_timing_analysis();
 
+    /* Calculate streaming configuration (SF change disabled for now) */
+    calculate_streaming_config();
+    /* apply_streaming_sf(); */  /* Disabled: may cause SF mismatch */
+
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
      * or on underflow. Threshold set to _bytes_per_frame so we get IRQ when there's room
      * for another codec2 frame */
