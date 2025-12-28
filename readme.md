@@ -1,3 +1,5 @@
+**Note:** For LR2021 radio support with streaming TX, see the [lr20xx branch](https://github.com/dudmuck/codec2_stm32f746g-discovery/tree/lr20xx).
+
 ## contains 3 projects
 
 * **passthru**: for checking [stm32f746g-discovery](https://www.st.com/en/evaluation-tools/32f746gdiscovery.html) hardware: LCD-touchscreen, microphone and speaker interface. Requires only one discovery board. Useful for anybody wishing to use this board for audio purpose.
