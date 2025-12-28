@@ -27,6 +27,11 @@ static lr20xx_radio_lora_pkt_params_t lora_pkt_params;
 /* Static modulation params - set by LoRaModemConfig_lr20xx(), used by is_bw_at_*(), is_sf_at_*() */
 static lr20xx_radio_lora_mod_params_t lora_mod_params;
 
+/* Streaming TX state - allows sending frames to FIFO incrementally */
+volatile uint8_t tx_fifo_idx;        /* how much of tx_buf has been sent to FIFO */
+volatile uint8_t tx_total_size;      /* total packet size to transmit */
+volatile uint8_t streaming_tx_active; /* flag: streaming TX in progress */
+
 void Radio_txDoneBottom()
 {
     if (RadioEvents->TxDone_botHalf)
@@ -213,12 +218,13 @@ static void Init_lr20xx(const RadioEvents_t* e)
 	/* Clear any pending IRQs and configure IRQ mask for DIO8 */
 	ASSERT_LR20XX_RC( lr20xx_system_clear_irq_status(NULL, LR20XX_SYSTEM_IRQ_ALL_MASK) );
 
-	/* Enable TX done, RX done, timeout, and error interrupts on DIO8 */
+	/* Enable TX done, RX done, timeout, error, and FIFO TX interrupts on DIO8 */
 	{
 		lr20xx_system_irq_mask_t irq_mask = LR20XX_SYSTEM_IRQ_TX_DONE |
 		                                    LR20XX_SYSTEM_IRQ_RX_DONE |
 		                                    LR20XX_SYSTEM_IRQ_TIMEOUT |
-		                                    LR20XX_SYSTEM_IRQ_ERROR;
+		                                    LR20XX_SYSTEM_IRQ_ERROR |
+		                                    LR20XX_SYSTEM_IRQ_FIFO_TX;
 		ASSERT_LR20XX_RC( lr20xx_system_set_dio_irq_cfg(NULL, LR20XX_SYSTEM_DIO_8, irq_mask) );
 	}
 
@@ -357,8 +363,61 @@ int Send_lr20xx(uint8_t size/*, timestamp_t maxListenTime, timestamp_t channelFr
 	if (lr20xx_radio_common_set_tx(NULL, 0) != LR20XX_STATUS_OK)
 		return -1;
 
+	streaming_tx_active = 0;
 	LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_TX;
 	return 0;
+}
+
+/* Streaming TX: start transmitting with initial_bytes, remaining sent via FIFO interrupt */
+int Send_lr20xx_streaming(uint8_t total_size, uint8_t initial_bytes)
+{
+	/* Update payload length in stored packet params */
+	lora_pkt_params.pld_len_in_bytes = total_size;
+
+	if (lr20xx_radio_lora_set_packet_params( NULL, &lora_pkt_params ) != LR20XX_STATUS_OK)
+		return -1;
+	lr20xx_radio_fifo_clear_tx( NULL );
+
+	/* Write only initial bytes to FIFO */
+	if (initial_bytes > total_size)
+		initial_bytes = total_size;
+	if (lr20xx_radio_fifo_write_tx( NULL, LR20xx_tx_buf, initial_bytes) != LR20XX_STATUS_OK)
+		return -1;
+
+	/* Set up streaming state */
+	tx_fifo_idx = initial_bytes;
+	tx_total_size = total_size;
+	streaming_tx_active = 1;
+
+	if (lr20xx_radio_common_set_tx(NULL, 0) != LR20XX_STATUS_OK)
+		return -1;
+
+	LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_TX;
+	return 0;
+}
+
+/* Called from FIFO TX callback to send more data */
+uint8_t Send_lr20xx_fifo_continue(void)
+{
+	uint8_t remaining;
+	uint8_t to_send;
+
+	if (!streaming_tx_active)
+		return 0;
+
+	remaining = tx_total_size - tx_fifo_idx;
+	if (remaining == 0)
+		return 0;
+
+	/* Send up to _bytes_per_frame at a time, or remaining if less */
+	extern uint8_t _bytes_per_frame;
+	to_send = (remaining > _bytes_per_frame) ? _bytes_per_frame : remaining;
+
+	if (lr20xx_radio_fifo_write_tx(NULL, &LR20xx_tx_buf[tx_fifo_idx], to_send) != LR20XX_STATUS_OK)
+		return 0;
+
+	tx_fifo_idx += to_send;
+	return to_send;
 }
 
 static bool service_lr20xx()

@@ -458,7 +458,19 @@ void tx_encoded(uint8_t tx_nbytes)
 
     txing = 1;
     txStartAt = uwTick;
+#ifdef ENABLE_LR20XX
+    /* Use streaming TX: start with 7/8 of the bytes, FIFO callback sends rest */
+    {
+        uint8_t initial_bytes = (tx_nbytes * 7) / 8;
+        /* Round down to frame boundary */
+        initial_bytes = (initial_bytes / _bytes_per_frame) * _bytes_per_frame;
+        if (initial_bytes < _bytes_per_frame)
+            initial_bytes = _bytes_per_frame;  /* minimum 1 frame */
+        Send_lr20xx_streaming(tx_nbytes, initial_bytes);
+    }
+#else
     lorahal.send(tx_nbytes);
+#endif
     appHal.lcd_printOpMode(true);
 }
 

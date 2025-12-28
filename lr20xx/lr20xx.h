@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <lr20xx_system_types.h>
 #include <lr20xx_status.h>
+#include <lr20xx_radio_fifo_types.h>
 
 /*!
  * @brief Stringify constants
@@ -44,5 +45,6 @@ extern void (*LR20xx_rxDone)(uint8_t size, float rssi, float snr);
 extern void (*LR20xx_chipModeChange)(void);
 extern void (*LR20xx_cadDone)(bool detected);
 extern void (*LR20xx_preambleDetected)(void);
+extern void (*LR20xx_fifoTx)(lr20xx_radio_fifo_flag_t tx_fifo_flags);
 
 extern lr20xx_system_chip_modes_t LR20xx_chipMode;

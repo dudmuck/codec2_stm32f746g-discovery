@@ -86,3 +86,12 @@ uint8_t get_sf_lr20xx(void);
 uint32_t get_freq_hz_lr20xx(void);
 uint8_t get_chip_mode_lr20xx(void);
 void print_streaming_timing_analysis(void);
+
+/* Streaming TX functions */
+int Send_lr20xx_streaming(uint8_t total_size, uint8_t initial_bytes);
+uint8_t Send_lr20xx_fifo_continue(void);
+
+/* Streaming TX state (defined in radio_lr20xx.c) */
+extern volatile uint8_t tx_fifo_idx;
+extern volatile uint8_t tx_total_size;
+extern volatile uint8_t streaming_tx_active;

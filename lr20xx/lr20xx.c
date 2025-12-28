@@ -16,6 +16,7 @@ void (*LR20xx_rxDone)(uint8_t size, float rssi, float snr);
 void (*LR20xx_chipModeChange)(void);
 void (*LR20xx_cadDone)(bool detected);
 void (*LR20xx_preambleDetected)(void);
+void (*LR20xx_fifoTx)(lr20xx_radio_fifo_flag_t tx_fifo_flags);
 
 uint8_t LR20xx_tx_buf[256];    // lora fifo size
 uint8_t LR20xx_rx_buf[256];    // lora fifo size
@@ -105,6 +106,13 @@ bool LR20xx_service()
         if (irqFlags & LR20XX_SYSTEM_IRQ_TIMEOUT) {
 			LR20xx_timeout(LR20xx_chipMode == LR20XX_SYSTEM_CHIP_MODE_TX);
 		}
+
+        if (irqFlags & LR20XX_SYSTEM_IRQ_FIFO_TX) {
+            lr20xx_radio_fifo_flag_t rx_fifo_flags, tx_fifo_flags;
+            ASSERT_LR20XX_RC( lr20xx_radio_fifo_get_and_clear_irq_flags(NULL, &rx_fifo_flags, &tx_fifo_flags) );
+            if (LR20xx_fifoTx)
+                LR20xx_fifoTx(tx_fifo_flags);
+        }
 
         if (irqFlags & LR20XX_SYSTEM_IRQ_ERROR) {
             lr20xx_system_errors_t errors;

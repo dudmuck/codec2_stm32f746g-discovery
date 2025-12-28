@@ -6,6 +6,9 @@
 #include "sx127x.h"
 #include "pinDefs_sx126x.h"
 #include "pinDefs_sx127x.h"
+#else
+#include "lr20xx.h"
+#include "lr20xx_radio_fifo.h"
 #endif /* !ENABLE_LR20XX */
 #include "pinDefs.h"
 
@@ -33,6 +36,25 @@ void txDoneCB()
 void rxTimeoutCB()
 {
 }
+
+#ifdef ENABLE_LR20XX
+volatile uint8_t fifo_tx_room;      /* flag: TX FIFO has room for more data */
+volatile uint8_t fifo_tx_underflow; /* flag: TX FIFO underflow occurred */
+
+void fifoTxCB(lr20xx_radio_fifo_flag_t tx_fifo_flags)
+{
+    if (tx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_UNDERFLOW) {
+        fifo_tx_underflow = 1;
+    }
+    if (tx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_THRESHOLD_LOW) {
+        fifo_tx_room = 1;
+        /* If streaming TX active, send more data to FIFO */
+        if (streaming_tx_active) {
+            Send_lr20xx_fifo_continue();
+        }
+    }
+}
+#endif /* ENABLE_LR20XX */
 
 const RadioEvents_t rev = {
     /* DioPin_top_half */     radio_irq_callback,
@@ -144,6 +166,7 @@ void start_radio()
 #ifdef ENABLE_LR20XX
     sethal_lr20xx();
     setAppHal_lr20xx();
+    LR20xx_fifoTx = fifoTxCB;
 #else
     SX126x_xfer(OPCODE_GET_STATUS, 0, 1, &status.octet);
 
