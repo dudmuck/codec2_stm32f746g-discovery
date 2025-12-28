@@ -160,11 +160,20 @@ run_test() {
     local frames=$(echo "$stats_line" | grep -oP 'frames=\K[0-9]+')
     local dropped=$(echo "$stats_line" | grep -oP 'dropped=\K[0-9]+')
     local dup=$(echo "$stats_line" | grep -oP 'dup=\K[0-9]+')
+    local gaps=$(echo "$stats_line" | grep -oP 'gaps=\K[0-9]+')
+
+    # Default gaps to 0 if not present (old firmware)
+    [ -z "$gaps" ] && gaps=0
 
     # Check for errors
     if [ -z "$frames" ]; then
         echo -e "  ${RED}FAIL${NC}: No frames received (check connection)"
         RESULTS[$rate_name]="FAIL: No frames"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        return 1
+    elif [ "$gaps" != "0" ]; then
+        echo -e "  ${RED}FAIL${NC}: frames=$frames gaps=$gaps (streaming gaps detected)"
+        RESULTS[$rate_name]="FAIL: frames=$frames gaps=$gaps"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         return 1
     elif [ "$dropped" != "0" ] || [ "$dup" != "0" ]; then
@@ -173,11 +182,11 @@ run_test() {
         FAIL_COUNT=$((FAIL_COUNT + 1))
         return 1
     else
-        echo -e "  ${GREEN}PASS${NC}: frames=$frames dropped=0 dup=0"
+        echo -e "  ${GREEN}PASS${NC}: frames=$frames dropped=0 dup=0 gaps=0"
         RESULTS[$rate_name]="PASS: frames=$frames"
         PASS_COUNT=$((PASS_COUNT + 1))
-        # Remove logs for passing tests
-        rm -f "$tx_log" "$rx_log"
+        # Keep logs for inspection (comment out rm to debug)
+        # rm -f "$tx_log" "$rx_log"
         return 0
     fi
 }

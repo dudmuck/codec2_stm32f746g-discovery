@@ -97,6 +97,18 @@ extern volatile uint8_t tx_total_size;
 extern volatile uint8_t streaming_tx_active;
 extern volatile uint8_t tx_buf_produced;  /* encoder updates this when new frame ready */
 
+/* Streaming TX state machine */
+typedef enum {
+    STREAM_IDLE,           /* Ready for new packet cycle */
+    STREAM_ENCODING,       /* Encoding frames, TX not yet started */
+    STREAM_TX_ACTIVE,      /* TX started, still encoding */
+    STREAM_WAIT_TX,        /* All frames encoded, waiting for TX to finish */
+    STREAM_BUFFERING_NEXT  /* Buffering next packet while current TX in progress */
+} stream_state_t;
+
+extern volatile stream_state_t stream_state;
+extern volatile uint32_t stream_underflow_count;
+
 /* Streaming TX configuration */
 void calculate_streaming_config(void);
 uint8_t apply_streaming_sf(void);

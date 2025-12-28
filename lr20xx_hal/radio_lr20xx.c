@@ -33,9 +33,46 @@ volatile uint8_t tx_total_size;      /* total packet size to transmit */
 volatile uint8_t streaming_tx_active; /* flag: streaming TX in progress */
 volatile uint8_t tx_buf_produced;    /* how much encoder has written to tx_buf */
 
+/* Streaming TX state machine */
+volatile stream_state_t stream_state = STREAM_IDLE;
+volatile uint32_t stream_underflow_count = 0;
+
 void Radio_txDoneBottom()
 {
-    if (RadioEvents->TxDone_botHalf)
+    uint8_t tx_continuing = 0;  /* Flag: did we start next TX immediately? */
+    streaming_tx_active = 0;
+
+    if (stream_state == STREAM_BUFFERING_NEXT) {
+        /* We were buffering next packet while this TX was in progress.
+         * Check if we have enough frames to start next TX immediately. */
+        uint8_t initial_bytes = get_streaming_initial_bytes();
+        if (tx_buf_produced >= initial_bytes) {
+            /* Enough frames ready - start TX immediately (no gap!) */
+            extern uint8_t lora_payload_length;
+            if (Send_lr20xx_streaming(lora_payload_length, initial_bytes) == 0) {
+                stream_state = STREAM_TX_ACTIVE;
+                tx_continuing = 1;  /* Don't notify app - we're still transmitting */
+            } else {
+                stream_state = STREAM_IDLE;
+            }
+        } else {
+            /* Not enough frames yet - continue encoding */
+            stream_state = STREAM_ENCODING;
+        }
+    } else if (stream_state == STREAM_WAIT_TX) {
+        /* Normal completion: all frames were encoded before TX finished */
+        stream_state = STREAM_IDLE;
+    } else if (stream_state == STREAM_TX_ACTIVE) {
+        /* Underflow: TX completed before all frames were encoded */
+        stream_underflow_count++;
+        stream_state = STREAM_IDLE;
+        printf("\e[31mTX underflow #%lu\e[0m\r\n", stream_underflow_count);
+    }
+    /* Note: if state is STREAM_IDLE or STREAM_ENCODING, something is wrong
+     * but we leave state as-is to avoid further confusion */
+
+    /* Only notify app of TxDone if we're not continuing with next packet */
+    if (!tx_continuing && RadioEvents->TxDone_botHalf)
         RadioEvents->TxDone_botHalf();
 }
 
@@ -400,19 +437,29 @@ int Send_lr20xx_streaming(uint8_t total_size, uint8_t initial_bytes)
 /* Called from FIFO TX callback to send more data */
 uint8_t Send_lr20xx_fifo_continue(void)
 {
-	uint8_t remaining;
+	uint8_t available;
 	uint8_t to_send;
+
+	/* Only send if in valid streaming state */
+	if (stream_state != STREAM_TX_ACTIVE && stream_state != STREAM_WAIT_TX)
+		return 0;
 
 	if (!streaming_tx_active)
 		return 0;
 
-	remaining = tx_total_size - tx_fifo_idx;
-	if (remaining == 0)
-		return 0;
+	/* Calculate how much data is available (produced but not yet sent to FIFO) */
+	uint8_t produced = tx_buf_produced;
+	if (produced > tx_total_size)
+		produced = tx_total_size;
 
-	/* Send up to _bytes_per_frame at a time, or remaining if less */
+	if (produced <= tx_fifo_idx)
+		return 0;  /* No new data available yet */
+
+	available = produced - tx_fifo_idx;
+
+	/* Send up to _bytes_per_frame at a time */
 	extern uint8_t _bytes_per_frame;
-	to_send = (remaining > _bytes_per_frame) ? _bytes_per_frame : remaining;
+	to_send = (available > _bytes_per_frame) ? _bytes_per_frame : available;
 
 	if (lr20xx_radio_fifo_write_tx(NULL, &LR20xx_tx_buf[tx_fifo_idx], to_send) != LR20XX_STATUS_OK)
 		return 0;
@@ -702,12 +749,29 @@ void calculate_streaming_config(void)
     streaming_cfg.margin_ms = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
 
     if (streaming_cfg.margin_ms >= 0) {
-        /* Encoder keeps up - streaming feasible */
-        streaming_cfg.streaming_feasible = 1;
-        streaming_cfg.recommended_sf = lora_mod_params.sf;
-        streaming_cfg.max_payload_bytes = lora_payload_length;
-        /* Minimum 1 frame to start, but add margin for safety */
-        streaming_cfg.min_initial_frames = 1;
+        /* Check if pipelining is possible.
+         * Pipelining works when we can encode the NEXT packet during CURRENT TX.
+         * Time to encode next packet: frames_per_packet * frame_period (= codec2_production_time)
+         * Time available during TX: pkt_toa
+         * Pipelining works when: pkt_toa >= codec2_production_time
+         */
+        if (pkt_toa_ms >= codec2_production_time) {
+            /* TX is slower than encoding - true streaming possible */
+            streaming_cfg.streaming_feasible = 1;
+            streaming_cfg.recommended_sf = lora_mod_params.sf;
+            streaming_cfg.max_payload_bytes = lora_payload_length;
+            /* We can encode all frames during TX, start with just 2 */
+            streaming_cfg.min_initial_frames = 2;
+        } else {
+            /* TX is faster than encoding - pipelining won't work.
+             * Need full packet buffer to avoid underflow.
+             * This means gaps between packets are unavoidable. */
+            streaming_cfg.streaming_feasible = 0;  /* Pipelining not feasible */
+            streaming_cfg.recommended_sf = lora_mod_params.sf;
+            streaming_cfg.max_payload_bytes = lora_payload_length;
+            streaming_cfg.min_initial_frames = streaming_cfg.frames_per_packet;
+            printf("NOTE: TX faster than encoding, buffering full packet\r\n");
+        }
     } else {
         /* TX faster than encoder - need initial buffer or SF adjustment */
         streaming_cfg.streaming_feasible = 0;
@@ -729,24 +793,48 @@ void calculate_streaming_config(void)
         }
 
         if (!streaming_cfg.streaming_feasible) {
-            /* Even SF5 too slow - calculate required initial buffer */
-            /* We need enough initial frames to cover the deficit */
-            mod_test.sf = 5;
-            mod_test.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(5, mod_test.bw);
-            pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &mod_test);
-
-            /* Deficit per packet in ms */
-            int32_t deficit_ms = (int32_t)pkt_toa_ms - (int32_t)codec2_production_time;
-            /* Convert to frames: deficit_ms / codec2_frame_period_ms */
-            uint8_t deficit_frames = (deficit_ms + codec2_frame_period_ms - 1) / codec2_frame_period_ms;
-            /* Need all frames initially if streaming not feasible */
+            /* Even SF5 too slow - need full buffer before TX */
             streaming_cfg.min_initial_frames = streaming_cfg.frames_per_packet;
             streaming_cfg.recommended_sf = 5;  /* fastest possible */
         } else {
-            streaming_cfg.min_initial_frames = 1;
+            /* Found working SF - calculate min_initial_frames at recommended SF */
+            mod_test.sf = streaming_cfg.recommended_sf;
+            mod_test.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(mod_test.sf, mod_test.bw);
+            uint32_t rec_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &mod_test);
+            uint8_t frames_during_tx = rec_toa / codec2_frame_period_ms;
+            if (frames_during_tx >= streaming_cfg.frames_per_packet)
+                streaming_cfg.min_initial_frames = 2;  /* Can encode all frames during TX */
+            else
+                streaming_cfg.min_initial_frames = streaming_cfg.frames_per_packet - frames_during_tx;
         }
 
         streaming_cfg.max_payload_bytes = lora_payload_length;
+    }
+
+    /* If recommended SF differs from current SF and we're not going to change it,
+     * recalculate min_initial_frames based on CURRENT SF to avoid underflow.
+     * This handles the case where apply_streaming_sf() is not called. */
+    if (streaming_cfg.recommended_sf != lora_mod_params.sf) {
+        /* Current SF is different - recalculate min_initial_frames for actual SF */
+        uint32_t actual_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
+        uint32_t actual_production = streaming_cfg.frames_per_packet * codec2_frame_period_ms;
+
+        if (actual_toa > actual_production) {
+            /* Current SF is too slow for streaming - need full packet before TX */
+            streaming_cfg.min_initial_frames = streaming_cfg.frames_per_packet;
+            streaming_cfg.margin_ms = 0;  /* No margin - will buffer full packet */
+            printf("WARNING: SF%u too slow for streaming, buffering full packet\r\n",
+                   lora_mod_params.sf);
+        } else {
+            /* Calculate min_initial_frames for current SF using correct formula:
+             * min_init = frames_per_packet - frames_during_tx */
+            uint8_t frames_during_tx = actual_toa / codec2_frame_period_ms;
+            if (frames_during_tx >= streaming_cfg.frames_per_packet)
+                streaming_cfg.min_initial_frames = 2;  /* Can encode all frames during TX */
+            else
+                streaming_cfg.min_initial_frames = streaming_cfg.frames_per_packet - frames_during_tx;
+            streaming_cfg.margin_ms = (int32_t)actual_production - (int32_t)actual_toa;
+        }
     }
 
     printf("Streaming config: feasible=%u, min_init=%u frames, rec_sf=%u, margin=%ld ms\r\n",

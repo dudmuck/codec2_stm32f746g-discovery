@@ -74,5 +74,33 @@ LoRa data rate selection is only possible in steps by a factor of two.  Codec2 b
 
 Latency across the radio link is due to LoRa packet duration.
 
+### LR20xx Streaming TX
+
+When using the LR2021 radio (build with `-DRADIO=LR2021`), the firmware supports streaming TX via the radio's FIFO threshold interrupt. This enables continuous audio streaming without gaps between packets when the radio data rate is sufficient.
+
+#### How it works
+
+On startup, the firmware analyzes timing feasibility:
+- Calculates packet time-on-air vs codec2 frame production time
+- Determines if streaming is feasible at current SF/BW settings
+- Recommends optimal SF if current settings are too slow
+- Calculates minimum initial frames needed before starting TX
+
+The streaming TX state machine:
+1. **ENCODING**: Buffering initial frames before TX starts
+2. **TX_ACTIVE**: TX in progress, continuing to encode frames
+3. **WAIT_TX**: All frames encoded, waiting for FIFO to drain
+4. **BUFFERING_NEXT**: Encoding next packet while current TX completes
+
+When TX is faster than encoding (e.g., 3200 mode at SF9), the firmware buffers a full packet before each transmission. When TX is slower than encoding, true streaming is possible with minimal initial buffering.
+
+#### Test Mode
+
+Press 'T' via serial to enable test mode, which sends sequence numbers instead of encoded audio. This allows verification of streaming integrity:
+- 't': Start TX
+- 'r': Stop TX
+- '?': Show stats (frames received, dropped, duplicates, gaps)
+
+The test script `test_radio_link.sh` automates testing across all codec2 rates.
 
 

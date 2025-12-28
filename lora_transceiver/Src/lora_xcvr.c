@@ -78,6 +78,8 @@ uint16_t expected_rx_seq;       // receiver expected sequence number
 uint32_t rx_frame_count;        // total frames received
 uint32_t rx_dropped_count;      // dropped frames detected
 uint32_t rx_duplicate_count;    // duplicate frames detected
+uint32_t rx_gap_count;          // streaming gaps detected (exceeding inter_pkt_timeout)
+uint32_t last_rx_pkt_tick;      // timestamp of last received packet
 
 volatile uint32_t cycleDur;
 volatile uint32_t cycleStartAt;
@@ -339,10 +341,12 @@ void svc_uart()
         rx_frame_count = 0;
         rx_dropped_count = 0;
         rx_duplicate_count = 0;
+        rx_gap_count = 0;
+        last_rx_pkt_tick = 0;
         printf("Test mode %s\r\n", test_mode ? "ON" : "OFF");
     } else if (rxchar == '?') {
-        printf("Test stats: frames=%lu dropped=%lu dup=%lu\r\n",
-               rx_frame_count, rx_dropped_count, rx_duplicate_count);
+        printf("Test stats: frames=%lu dropped=%lu dup=%lu gaps=%lu\r\n",
+               rx_frame_count, rx_dropped_count, rx_duplicate_count, rx_gap_count);
     } else {
         printf("Commands:\r\n");
         printf("  t: TX start    r: TX end (RX)\r\n");
@@ -459,9 +463,9 @@ void tx_encoded(uint8_t tx_nbytes)
     txing = 1;
     txStartAt = uwTick;
 #ifdef ENABLE_LR20XX
-    /* Use streaming TX with FIFO: send 7/8 of buffer initially, rest via FIFO interrupt */
+    /* Use streaming TX: send current produced data, FIFO callback sends rest */
     {
-        uint8_t initial_bytes = (tx_nbytes * 7) / 8;
+        uint8_t initial_bytes = tx_buf_produced;
         /* Round down to frame boundary */
         initial_bytes = (initial_bytes / _bytes_per_frame) * _bytes_per_frame;
         if (initial_bytes < _bytes_per_frame)
@@ -631,7 +635,17 @@ void parse_rx()
     static short from_decoderB[320];
 
     if (test_mode) {
-        /* Test mode: check sequence numbers instead of decoding */
+        /* Test mode: check sequence numbers instead of decoding.
+         * Also detect streaming gaps (time between packets > inter_pkt_timeout) */
+        if (last_rx_pkt_tick != 0) {
+            uint32_t gap = uwTick - last_rx_pkt_tick;
+            if (gap > inter_pkt_timeout) {
+                rx_gap_count++;
+                printf("\e[35mGAP %lums\e[0m ", gap);
+            }
+        }
+        last_rx_pkt_tick = uwTick;
+
         for (n = 0; n < rx_size; n += _bytes_per_frame) {
             test_mode_decode(&lorahal.rx_buf[n]);
         }
@@ -942,14 +956,54 @@ void AudioLoopback_demo(void)
                 cycleStartAt = 0;
                 mid = 0;
                 frameCnt = 0;
+#ifdef ENABLE_LR20XX
+                /* Reset state machine for new TX session */
+                stream_state = STREAM_IDLE;
+                tx_buf_produced = 0;
+#endif
             }
 
             if (audio_rec_buffer_state != BUFFER_OFFSET_NONE) {
+#ifdef ENABLE_LR20XX
+                /* State machine: handle WAIT_TX state - skip encoding, wait for TX to complete */
+                if (stream_state == STREAM_WAIT_TX) {
+                    /* Check if all FIFO data has been sent to radio.
+                     * If so, we can start buffering the next packet while TX continues. */
+                    if (tx_fifo_idx >= tx_total_size) {
+                        /* FIFO fully loaded - start buffering next packet */
+                        tx_buf_idx = 0;
+                        mid = 0;
+                        tx_buf_produced = 0;
+                        stream_state = STREAM_BUFFERING_NEXT;
+                        /* Fall through to encode for next packet */
+                    } else {
+                        /* Still loading FIFO - wait */
+                        audio_rec_buffer_state = BUFFER_OFFSET_NONE;
+                        lorahal.service();
+                        goto skip_encode;
+                    }
+                }
+
+                /* State machine: IDLE with non-zero tx_buf_idx means TxDone just fired
+                 * Reset indices BEFORE encoding to avoid buffer overflow */
+                if (stream_state == STREAM_IDLE && tx_buf_idx > 0) {
+                    tx_buf_idx = 0;
+                    mid = 0;
+                }
+
+                /* State machine: transition IDLE -> ENCODING on new cycle */
+                if (tx_buf_idx == 0 && mid == 0 && stream_state == STREAM_IDLE) {
+                    stream_state = STREAM_ENCODING;
+                    tx_buf_produced = 0;
+                    cycleDur = uwTick - cycleStartAt;
+                    cycleStartAt = uwTick;
+                }
+#else
                 if (tx_buf_idx == 0 && mid == 0) {
                     cycleDur = uwTick - cycleStartAt;
                     cycleStartAt = uwTick;
                 }
-
+#endif
 
                 if (audio_rec_buffer_state == BUFFER_OFFSET_FULL) {
                     inPtr = (short*)audio_buffer_in_B;
@@ -959,20 +1013,9 @@ void AudioLoopback_demo(void)
                 audio_rec_buffer_state = BUFFER_OFFSET_NONE;
 
                 if (test_mode) {
-                    /* Test mode: send sequence numbers instead of encoded audio */
-                    if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
-                        /* These modes need 2 audio callbacks per _bytes_per_frame (dual frame) */
-                        if (mid) {
-                            test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
-                            tx_buf_idx += _bytes_per_frame;
-                            mid = 0;
-                        } else {
-                            mid = 1;
-                        }
-                    } else {
-                        test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
-                        tx_buf_idx += _bytes_per_frame;
-                    }
+                    /* Test mode: encode on every callback (like real encoder) */
+                    test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+                    tx_buf_idx += _bytes_per_frame;
                 } else if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
                     unsigned i;
                     if (mid) {
@@ -1016,18 +1059,52 @@ void AudioLoopback_demo(void)
 
                 lorahal.service();
 
+#ifdef ENABLE_LR20XX
+                /* Update producer index so FIFO callback can send new data */
+                tx_buf_produced = tx_buf_idx;
+
+                /* State machine: ENCODING -> TX_ACTIVE when enough data */
+                if (stream_state == STREAM_ENCODING &&
+                    tx_buf_idx >= get_streaming_initial_bytes()) {
+                    tx_encoded(lora_payload_length);
+                    stream_state = STREAM_TX_ACTIVE;
+                }
+
+                /* State machine: TX_ACTIVE -> WAIT_TX when all frames encoded */
+                if (stream_state == STREAM_TX_ACTIVE &&
+                    tx_buf_idx >= lora_payload_length) {
+                    stream_state = STREAM_WAIT_TX;
+                    /* Don't reset tx_buf_idx - STREAM_WAIT_TX will check FIFO
+                     * and transition to STREAM_BUFFERING_NEXT when ready */
+                }
+
+                /* STREAM_BUFFERING_NEXT: continue encoding for next packet.
+                 * We stay in this state until TxDone fires (handled in radio_lr20xx.c).
+                 * No state transition needed here - just keep filling the buffer.
+                 * When tx_buf_idx reaches lora_payload_length, we have a full packet
+                 * ready and will start TX immediately when current TX completes. */
+#else
                 if (tx_buf_idx >= lora_payload_length) {
                     tx_encoded(tx_buf_idx);
                     tx_buf_idx = 0;
                     mid = 0;
                 }
+#endif
 
             } // ..if (audio_rec_buffer_state != BUFFER_OFFSET_NONE)
+#ifdef ENABLE_LR20XX
+skip_encode:
+            (void)0;  /* Empty statement for label */
+#endif
         } else {
             if (user_button_pressed == 1) {
                 /* tx -> rx mode switch */
                 user_button_pressed = 0;
                 printf("unkey %s tx_buf_idx:%u\r\n", txing ? "txing" : "-", tx_buf_idx);
+#ifdef ENABLE_LR20XX
+                /* Stop buffering next packet - we're done transmitting */
+                stream_state = STREAM_IDLE;
+#endif
                 if (txing) {
                     rx_start_at_tx_done = 1;
                 } else if (tx_buf_idx > 0) {
