@@ -69,6 +69,15 @@ volatile uint8_t user_button_pressed;   // flag
 volatile uint8_t txing;   // flag
 volatile uint8_t rx_start_at_tx_done;   // flag
 volatile uint8_t terminate_spkr_rx;   // flag
+volatile uint8_t uart_tx_active;   // flag for UART-controlled TX
+
+/* Test mode variables */
+uint8_t test_mode;              // flag for sequence number test mode
+uint16_t tx_seq_num;            // transmitter sequence number
+uint16_t expected_rx_seq;       // receiver expected sequence number
+uint32_t rx_frame_count;        // total frames received
+uint32_t rx_dropped_count;      // dropped frames detected
+uint32_t rx_duplicate_count;    // duplicate frames detected
 
 volatile uint32_t cycleDur;
 volatile uint32_t cycleStartAt;
@@ -313,6 +322,95 @@ void svc_uart()
             printf("outVolFail%u\r\n", audio_out_vol);
     } else if (rxchar == '.') {
         appHal.radioPrintStatus();
+    } else if (rxchar == 'R') {
+        printf("Resetting MCU...\r\n");
+        HAL_Delay(10);  /* allow printf to complete */
+        NVIC_SystemReset();
+    } else if (rxchar == 't') {
+        uart_tx_active = 1;
+        printf("TX start\r\n");
+    } else if (rxchar == 'r') {
+        uart_tx_active = 0;
+        printf("TX end\r\n");
+    } else if (rxchar == 'T') {
+        test_mode ^= 1;
+        tx_seq_num = 0;
+        expected_rx_seq = 0;
+        rx_frame_count = 0;
+        rx_dropped_count = 0;
+        rx_duplicate_count = 0;
+        printf("Test mode %s\r\n", test_mode ? "ON" : "OFF");
+    } else if (rxchar == '?') {
+        printf("Test stats: frames=%lu dropped=%lu dup=%lu\r\n",
+               rx_frame_count, rx_dropped_count, rx_duplicate_count);
+    } else {
+        printf("Commands:\r\n");
+        printf("  t: TX start    r: TX end (RX)\r\n");
+        printf("  T: toggle test mode\r\n");
+        printf("  ?: test stats  .: radio status\r\n");
+        printf("  q/a: mic vol   w/s: spkr vol\r\n");
+        printf("  R: reset MCU\r\n");
+    }
+}
+
+/* Fill frame with sequence number for test mode */
+void test_mode_encode(uint8_t *out, uint8_t frame_size)
+{
+    unsigned i;
+    /* Put 16-bit sequence number at start of frame */
+    out[0] = tx_seq_num & 0xff;
+    out[1] = (tx_seq_num >> 8) & 0xff;
+    /* Fill rest with pattern based on seq num for verification */
+    for (i = 2; i < frame_size; i++) {
+        out[i] = (uint8_t)(tx_seq_num + i);
+    }
+    tx_seq_num++;
+}
+
+/* Check sequence number in received frame for test mode */
+void test_mode_decode(const uint8_t *in)
+{
+    static uint32_t test_frame_cnt;
+    static uint32_t test_tick_at_second;
+    static uint32_t dropped_this_period;
+    static uint32_t dup_this_period;
+    uint16_t rx_seq = in[0] | (in[1] << 8);
+
+    rx_frame_count++;
+    test_frame_cnt++;
+
+    if (rx_seq == expected_rx_seq) {
+        /* Frame received in order */
+        expected_rx_seq++;
+    } else if (rx_seq > expected_rx_seq) {
+        /* Frames were dropped */
+        uint16_t dropped = rx_seq - expected_rx_seq;
+        rx_dropped_count += dropped;
+        dropped_this_period += dropped;
+        printf("\e[31mDROP %u frames (got %u, expected %u)\e[0m\r\n",
+               dropped, rx_seq, expected_rx_seq);
+        expected_rx_seq = rx_seq + 1;
+    } else {
+        /* Duplicate or out-of-order frame */
+        rx_duplicate_count++;
+        dup_this_period++;
+        printf("\e[33mDUP/OOO frame (got %u, expected %u)\e[0m\r\n",
+               rx_seq, expected_rx_seq);
+    }
+
+    /* Periodic status every frames_per_sec frames */
+    if (test_frame_cnt >= frames_per_sec) {
+        uint32_t elapsed = uwTick - test_tick_at_second;
+        if (dropped_this_period || dup_this_period) {
+            printf("%lums for %lu frames (\e[31m%lu dropped\e[0m, \e[33m%lu dup\e[0m)\r\n",
+                   elapsed, test_frame_cnt, dropped_this_period, dup_this_period);
+        } else {
+            printf("%lums for %lu frames OK\r\n", elapsed, test_frame_cnt);
+        }
+        test_tick_at_second = uwTick;
+        test_frame_cnt = 0;
+        dropped_this_period = 0;
+        dup_this_period = 0;
     }
 }
 
@@ -519,6 +617,14 @@ void parse_rx()
     unsigned n;
     static short from_decoderA[320];
     static short from_decoderB[320];
+
+    if (test_mode) {
+        /* Test mode: check sequence numbers instead of decoding */
+        for (n = 0; n < rx_size; n += _bytes_per_frame) {
+            test_mode_decode(&lorahal.rx_buf[n]);
+        }
+        return;
+    }
 
     if (currently_decoding == 0) {
         fdb = 0;
@@ -811,7 +917,7 @@ void AudioLoopback_demo(void)
             memcpy(&prev_TS_State, &this_TS_State, sizeof(TS_StateTypeDef));
         }
 
-        if (BSP_PB_GetState(BUTTON_KEY) == GPIO_PIN_SET) {
+        if ((BSP_PB_GetState(BUTTON_KEY) == GPIO_PIN_SET) || uart_tx_active) {
             short *inPtr = NULL;
             if (user_button_pressed == 0) {
                 user_button_pressed = 1;
@@ -839,7 +945,22 @@ void AudioLoopback_demo(void)
                 }
                 audio_rec_buffer_state = BUFFER_OFFSET_NONE;
 
-                if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
+                if (test_mode) {
+                    /* Test mode: send sequence numbers instead of encoded audio */
+                    if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
+                        /* These modes need 2 audio callbacks per _bytes_per_frame (dual frame) */
+                        if (mid) {
+                            test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+                            tx_buf_idx += _bytes_per_frame;
+                            mid = 0;
+                        } else {
+                            mid = 1;
+                        }
+                    } else {
+                        test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+                        tx_buf_idx += _bytes_per_frame;
+                    }
+                } else if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
                     unsigned i;
                     if (mid) {
                         unsigned oidx, iidx;

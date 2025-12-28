@@ -344,6 +344,28 @@ int main(void)
 
     while (c2 == NULL) {
         uint16_t x, y;
+        /* Check UART for rate selection: '0'-'5' or '8' */
+        if (uartReceived) {
+            uint8_t handled = 0;
+            uartReceived = 0;
+            HAL_UART_Receive_IT(&UartHandle, &rxchar, 1);
+            printf("rxchar '%c'\r\n", rxchar);
+            if (rxchar >= '0' && rxchar <= '8') {
+                int8_t rate_idx = rxchar - '0';
+                /* indices 6 and 7 are invalid (empty modes) */
+                if (modeStr[rate_idx][0] != 0) {
+                    pressed_bitrate = rate_idx;
+                    printf("UART selected rate: %s\r\n", modeStr[rate_idx]);
+                    handled = 1;
+                }
+            }
+            if (!handled) {
+                printf("Select codec2 rate:\r\n");
+                printf("  0: 3200  1: 2400  2: 1600\r\n");
+                printf("  3: 1400  4: 1300  5: 1200\r\n");
+                printf("  8: 700C\r\n");
+            }
+        }
         if (status == TS_OK) {
             BSP_TS_GetState(&TS_State);
             if (TS_State.touchDetected) {
