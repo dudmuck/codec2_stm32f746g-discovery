@@ -49,6 +49,9 @@ unsigned inter_pkt_timeout;
 volatile int rx_size;
 volatile float rx_rssi;
 volatile float rx_snr;
+#ifdef ENABLE_LR20XX
+volatile uint16_t rx_decode_idx;    /* how many bytes decoded from streaming RX */
+#endif
 
 volatile uint32_t txStartAt;
 //yyy volatile uint32_t cycleStartAt;
@@ -445,7 +448,7 @@ int main(void)
                 break;
             case CODEC2_MODE_1300:
                 lora_payload_length = 52;
-                sf_at_500KHz = 11;
+                sf_at_500KHz = 9;   // reduced from 11 for streaming (SF9: 83ms << 160ms production, 77ms margin)
                 inter_pkt_timeout = 40;
                 str = "1300";
                 break;
@@ -457,7 +460,7 @@ int main(void)
                 break;
             case CODEC2_MODE_700C:
                 lora_payload_length = 56;
-                sf_at_500KHz = 12;
+                sf_at_500KHz = 11;  // reduced from 12 for streaming (SF11: 288ms < 320ms production)
                 inter_pkt_timeout = 40;
                 str = "700C";
                 break;
@@ -491,11 +494,14 @@ int main(void)
 
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
      * or on underflow. Threshold set to _bytes_per_frame so we get IRQ when there's room
-     * for another codec2 frame */
+     * for another codec2 frame.
+     * Configure RX FIFO IRQ: alert when FIFO level exceeds threshold (data available to read)
+     * or on overflow. Threshold set to _bytes_per_frame so we get IRQ when there's a full
+     * codec2 frame available for early decoding. */
     lr20xx_radio_fifo_cfg_irq(NULL,
-                              LR20XX_RADIO_FIFO_FLAG_NONE,  /* rx_fifo_irq_enable */
+                              LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH | LR20XX_RADIO_FIFO_FLAG_OVERFLOW,  /* rx_fifo_irq_enable */
                               LR20XX_RADIO_FIFO_FLAG_THRESHOLD_LOW | LR20XX_RADIO_FIFO_FLAG_UNDERFLOW,  /* tx_fifo_irq_enable */
-                              0,                            /* rx_fifo_high_threshold */
+                              _bytes_per_frame,             /* rx_fifo_high_threshold */
                               _bytes_per_frame,             /* tx_fifo_low_threshold */
                               0,                            /* rx_fifo_low_threshold */
                               0);                           /* tx_fifo_high_threshold */

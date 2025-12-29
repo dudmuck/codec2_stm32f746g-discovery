@@ -31,8 +31,9 @@
 
 void init_lr20xx(void);
 
-extern uint8_t LR20xx_tx_buf[];    // lora fifo size
-extern uint8_t LR20xx_rx_buf[];    // lora fifo size
+#define LR20XX_BUF_SIZE  256
+extern uint8_t LR20xx_tx_buf[LR20XX_BUF_SIZE];
+extern uint8_t LR20xx_rx_buf[LR20XX_BUF_SIZE];
 
 bool LR20xx_service(void);
 void LR20xx_setStandby(lr20xx_system_standby_mode_t stby_mode);
@@ -46,5 +47,6 @@ extern void (*LR20xx_chipModeChange)(void);
 extern void (*LR20xx_cadDone)(bool detected);
 extern void (*LR20xx_preambleDetected)(void);
 extern void (*LR20xx_fifoTx)(lr20xx_radio_fifo_flag_t tx_fifo_flags);
+extern void (*LR20xx_fifoRx)(lr20xx_radio_fifo_flag_t rx_fifo_flags);
 
 extern lr20xx_system_chip_modes_t LR20xx_chipMode;

@@ -161,9 +161,14 @@ run_test() {
     local dropped=$(echo "$stats_line" | grep -oP 'dropped=\K[0-9]+')
     local dup=$(echo "$stats_line" | grep -oP 'dup=\K[0-9]+')
     local gaps=$(echo "$stats_line" | grep -oP 'gaps=\K[0-9]+')
+    # Parse overflow=count/bytes format
+    local overflow_count=$(echo "$stats_line" | grep -oP 'overflow=\K[0-9]+')
+    local overflow_bytes=$(echo "$stats_line" | grep -oP 'overflow=[0-9]+/\K[0-9]+')
 
-    # Default gaps to 0 if not present (old firmware)
+    # Default values for missing stats (old firmware compatibility)
     [ -z "$gaps" ] && gaps=0
+    [ -z "$overflow_count" ] && overflow_count=0
+    [ -z "$overflow_bytes" ] && overflow_bytes=0
 
     # Check for errors
     if [ -z "$frames" ]; then
@@ -182,11 +187,14 @@ run_test() {
         FAIL_COUNT=$((FAIL_COUNT + 1))
         return 1
     else
-        echo -e "  ${GREEN}PASS${NC}: frames=$frames dropped=0 dup=0 gaps=0"
-        RESULTS[$rate_name]="PASS: frames=$frames"
+        # Show overflow stats (informational - overflow is handled correctly)
+        local overflow_info=""
+        if [ "$overflow_count" != "0" ]; then
+            overflow_info=" overflow=${overflow_count}pkts/${overflow_bytes}B"
+        fi
+        echo -e "  ${GREEN}PASS${NC}: frames=$frames dropped=0 dup=0 gaps=0${overflow_info}"
+        RESULTS[$rate_name]="PASS ($frames frames${overflow_info})"
         PASS_COUNT=$((PASS_COUNT + 1))
-        # Keep logs for inspection (comment out rm to debug)
-        # rm -f "$tx_log" "$rx_log"
         return 0
     fi
 }

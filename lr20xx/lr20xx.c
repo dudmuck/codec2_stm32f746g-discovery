@@ -17,9 +17,10 @@ void (*LR20xx_chipModeChange)(void);
 void (*LR20xx_cadDone)(bool detected);
 void (*LR20xx_preambleDetected)(void);
 void (*LR20xx_fifoTx)(lr20xx_radio_fifo_flag_t tx_fifo_flags);
+void (*LR20xx_fifoRx)(lr20xx_radio_fifo_flag_t rx_fifo_flags);
 
-uint8_t LR20xx_tx_buf[256];    // lora fifo size
-uint8_t LR20xx_rx_buf[256];    // lora fifo size
+uint8_t LR20xx_tx_buf[LR20XX_BUF_SIZE];
+uint8_t LR20xx_rx_buf[LR20XX_BUF_SIZE];
 
 /*yyy void test_reset_pin()
 {
@@ -91,8 +92,21 @@ bool LR20xx_service()
                 !(irqFlags & LR20XX_SYSTEM_IRQ_LEN_ERROR)) {
                 uint16_t size;
                 ASSERT_LR20XX_RC( lr20xx_radio_common_get_rx_packet_length(NULL, &size) );
-                if (size <= sizeof(LR20xx_rx_buf)) {
-                    ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, LR20xx_rx_buf, size) );
+                if (size <= LR20XX_BUF_SIZE) {
+                    /* Check if streaming RX already read some data */
+                    extern volatile uint16_t rx_fifo_read_idx;
+                    if (rx_fifo_read_idx > 0) {
+                        /* Streaming RX active - only read remaining bytes not yet read */
+                        if (size > rx_fifo_read_idx) {
+                            uint16_t remaining = size - rx_fifo_read_idx;
+                            ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], remaining) );
+                            rx_fifo_read_idx = size;  /* Update index so streaming_rx_decode() sees all data */
+                        }
+                        /* Data already in buffer from streaming reads */
+                    } else {
+                        /* Normal RX - read entire packet */
+                        ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, LR20xx_rx_buf, size) );
+                    }
                     if (LR20xx_rxDone) {
                         lr20xx_radio_lora_packet_status_t pkt_status = { 0 };
                         ASSERT_LR20XX_RC( lr20xx_radio_lora_get_packet_status(NULL, &pkt_status) );
@@ -112,6 +126,13 @@ bool LR20xx_service()
             ASSERT_LR20XX_RC( lr20xx_radio_fifo_get_and_clear_irq_flags(NULL, &rx_fifo_flags, &tx_fifo_flags) );
             if (LR20xx_fifoTx)
                 LR20xx_fifoTx(tx_fifo_flags);
+        }
+
+        if (irqFlags & LR20XX_SYSTEM_IRQ_FIFO_RX) {
+            lr20xx_radio_fifo_flag_t rx_fifo_flags, tx_fifo_flags;
+            ASSERT_LR20XX_RC( lr20xx_radio_fifo_get_and_clear_irq_flags(NULL, &rx_fifo_flags, &tx_fifo_flags) );
+            if (LR20xx_fifoRx)
+                LR20xx_fifoRx(rx_fifo_flags);
         }
 
         if (irqFlags & LR20XX_SYSTEM_IRQ_ERROR) {

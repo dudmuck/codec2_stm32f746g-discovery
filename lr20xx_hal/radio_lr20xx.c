@@ -256,13 +256,14 @@ static void Init_lr20xx(const RadioEvents_t* e)
 	/* Clear any pending IRQs and configure IRQ mask for DIO8 */
 	ASSERT_LR20XX_RC( lr20xx_system_clear_irq_status(NULL, LR20XX_SYSTEM_IRQ_ALL_MASK) );
 
-	/* Enable TX done, RX done, timeout, error, and FIFO TX interrupts on DIO8 */
+	/* Enable TX done, RX done, timeout, error, and FIFO TX/RX interrupts on DIO8 */
 	{
 		lr20xx_system_irq_mask_t irq_mask = LR20XX_SYSTEM_IRQ_TX_DONE |
 		                                    LR20XX_SYSTEM_IRQ_RX_DONE |
 		                                    LR20XX_SYSTEM_IRQ_TIMEOUT |
 		                                    LR20XX_SYSTEM_IRQ_ERROR |
-		                                    LR20XX_SYSTEM_IRQ_FIFO_TX;
+		                                    LR20XX_SYSTEM_IRQ_FIFO_TX |
+		                                    LR20XX_SYSTEM_IRQ_FIFO_RX;
 		ASSERT_LR20XX_RC( lr20xx_system_set_dio_irq_cfg(NULL, LR20XX_SYSTEM_DIO_8, irq_mask) );
 	}
 

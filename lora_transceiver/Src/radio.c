@@ -40,6 +40,8 @@ void rxTimeoutCB()
 #ifdef ENABLE_LR20XX
 volatile uint8_t fifo_tx_room;      /* flag: TX FIFO has room for more data */
 volatile uint8_t fifo_tx_underflow; /* flag: TX FIFO underflow occurred */
+volatile uint8_t fifo_rx_overflow;  /* flag: RX FIFO overflow occurred */
+volatile uint16_t rx_fifo_read_idx; /* how much data read from RX FIFO so far */
 
 void fifoTxCB(lr20xx_radio_fifo_flag_t tx_fifo_flags)
 {
@@ -54,6 +56,33 @@ void fifoTxCB(lr20xx_radio_fifo_flag_t tx_fifo_flags)
         }
     }
 }
+
+static uint32_t fifo_rx_irq_count;
+
+void fifoRxCB(lr20xx_radio_fifo_flag_t rx_fifo_flags)
+{
+    if (rx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_OVERFLOW) {
+        fifo_rx_overflow = 1;
+        /* Note: printf removed from IRQ - check fifo_rx_overflow in main loop */
+    }
+    if (rx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH) {
+        fifo_rx_irq_count++;
+        /* RX FIFO has data available - read and decode early */
+        uint16_t fifo_level;
+        if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK) {
+            extern uint8_t _bytes_per_frame;
+            /* Read complete frames only */
+            uint16_t frames_available = fifo_level / _bytes_per_frame;
+            uint16_t bytes_to_read = frames_available * _bytes_per_frame;
+            if (bytes_to_read > 0 && (rx_fifo_read_idx + bytes_to_read) <= LR20XX_BUF_SIZE) {
+                lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], bytes_to_read);
+                rx_fifo_read_idx += bytes_to_read;
+            }
+        }
+    }
+}
+
+uint32_t get_fifo_rx_irq_count(void) { return fifo_rx_irq_count; }
 #endif /* ENABLE_LR20XX */
 
 const RadioEvents_t rev = {
@@ -167,6 +196,7 @@ void start_radio()
     sethal_lr20xx();
     setAppHal_lr20xx();
     LR20xx_fifoTx = fifoTxCB;
+    LR20xx_fifoRx = fifoRxCB;
 #else
     SX126x_xfer(OPCODE_GET_STATUS, 0, 1, &status.octet);
 

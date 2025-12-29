@@ -8,6 +8,10 @@
 #include <stdio.h>
 #include "string.h"
 #include "radio.h"
+#ifdef ENABLE_LR20XX
+#include "lr20xx.h"
+#include "lr20xx_radio_fifo.h"
+#endif
 
 #define DEFAULT_MIC_GAIN        95
 
@@ -79,7 +83,13 @@ uint32_t rx_frame_count;        // total frames received
 uint32_t rx_dropped_count;      // dropped frames detected
 uint32_t rx_duplicate_count;    // duplicate frames detected
 uint32_t rx_gap_count;          // streaming gaps detected (exceeding inter_pkt_timeout)
+uint32_t rx_overflow_count;     // packets with overflow data from next packet
+uint32_t rx_overflow_bytes;     // total overflow bytes preserved
 uint32_t last_rx_pkt_tick;      // timestamp of last received packet
+
+#ifdef ENABLE_LR20XX
+extern uint32_t get_fifo_rx_irq_count(void);
+#endif
 
 volatile uint32_t cycleDur;
 volatile uint32_t cycleStartAt;
@@ -342,11 +352,17 @@ void svc_uart()
         rx_dropped_count = 0;
         rx_duplicate_count = 0;
         rx_gap_count = 0;
+        rx_overflow_count = 0;
+        rx_overflow_bytes = 0;
         last_rx_pkt_tick = 0;
         printf("Test mode %s\r\n", test_mode ? "ON" : "OFF");
     } else if (rxchar == '?') {
-        printf("Test stats: frames=%lu dropped=%lu dup=%lu gaps=%lu\r\n",
-               rx_frame_count, rx_dropped_count, rx_duplicate_count, rx_gap_count);
+        printf("Test stats: frames=%lu dropped=%lu dup=%lu gaps=%lu overflow=%lu/%lu\r\n",
+               rx_frame_count, rx_dropped_count, rx_duplicate_count, rx_gap_count,
+               rx_overflow_count, rx_overflow_bytes);
+#ifdef ENABLE_LR20XX
+        printf("  fifo_rx_irqs=%lu\r\n", get_fifo_rx_irq_count());
+#endif
     } else {
         printf("Commands:\r\n");
         printf("  t: TX start    r: TX end (RX)\r\n");
@@ -480,6 +496,12 @@ void tx_encoded(uint8_t tx_nbytes)
 
 void lora_rx_begin()
 {
+#ifdef ENABLE_LR20XX
+    extern volatile uint16_t rx_fifo_read_idx;
+    extern volatile uint16_t rx_decode_idx;
+    rx_fifo_read_idx = 0;
+    rx_decode_idx = 0;
+#endif
     lorahal.rx(0);
     appHal.lcd_printOpMode(false);
     frameCnt = 0;
@@ -715,6 +737,78 @@ void parse_rx()
         terminate_spkr_at_tick = uwTick + inter_pkt_timeout;
     }
 } // ..parse_rx()
+
+#ifdef ENABLE_LR20XX
+/* Streaming RX: decode frames as they arrive from FIFO */
+void streaming_rx_decode(void)
+{
+    extern volatile uint16_t rx_fifo_read_idx;
+    extern volatile uint16_t rx_decode_idx;
+    static short from_decoderA[320];
+    static short from_decoderB[320];
+
+    /* Check if new frames are available */
+    while (rx_decode_idx + _bytes_per_frame <= rx_fifo_read_idx) {
+        /* Don't decode past packet boundary if packet is complete.
+         * This prevents double-decoding when overflow is preserved. */
+        if (rx_size != -1 && rx_decode_idx >= (uint16_t)rx_size) {
+            break;
+        }
+
+        /* In test mode, check sequence numbers but still decode for timing */
+        if (test_mode) {
+            test_mode_decode(&lorahal.rx_buf[rx_decode_idx]);
+            /* Fall through to decode path to maintain same timing as speech mode */
+        }
+
+        if (currently_decoding == 0) {
+            fdb = 0;
+            start_tone();
+            currently_decoding = 1;
+            if (!test_mode)
+                printf("stream_start idx=%u\r\n", rx_decode_idx);
+        }
+        /* Reset timeout and clear any pending terminate flag since we have data */
+        terminate_spkr_at_tick = 0;
+        terminate_spkr_rx = 0;
+
+        if (selected_bitrate == CODEC2_MODE_700C || selected_bitrate == CODEC2_MODE_1300) {
+            /* Dual-frame modes - decode 2 frames from _bytes_per_frame */
+            unsigned i;
+            uint8_t scratch[7];
+            for (i = 0; i < frame_length_bytes; i++)
+                scratch[i] = lorahal.rx_buf[rx_decode_idx + i];
+            scratch[i] = lorahal.rx_buf[rx_decode_idx + i] & 0xf0;
+
+            decBuf = fdb ? from_decoderB : from_decoderA;
+            prevDecBuf = fdb ? from_decoderA : from_decoderB;
+            codec2_decode(c2, decBuf, scratch);
+            put_spkr();
+
+            for (i = 0; i < frame_length_bytes; i++) {
+                scratch[i] = lorahal.rx_buf[rx_decode_idx + i + frame_length_bytes] & 0x0f;
+                scratch[i] <<= 4;
+                if (i < frame_length_bytes)
+                    scratch[i] |= (lorahal.rx_buf[rx_decode_idx + i + frame_length_bytes + 1] & 0xf0) >> 4;
+            }
+
+            decBuf = fdb ? from_decoderB : from_decoderA;
+            prevDecBuf = fdb ? from_decoderA : from_decoderB;
+            codec2_decode(c2, decBuf, scratch);
+            put_spkr();
+        } else {
+            /* Normal modes - decode 1 frame per _bytes_per_frame */
+            const uint8_t *encoded = &lorahal.rx_buf[rx_decode_idx];
+            decBuf = fdb ? from_decoderB : from_decoderA;
+            prevDecBuf = fdb ? from_decoderA : from_decoderB;
+            codec2_decode(c2, decBuf, encoded);
+            put_spkr();
+        }
+
+        rx_decode_idx += _bytes_per_frame;
+    }
+}
+#endif /* ENABLE_LR20XX */
 
 void HAL_IncTick(void)
 {
@@ -1013,9 +1107,21 @@ void AudioLoopback_demo(void)
                 audio_rec_buffer_state = BUFFER_OFFSET_NONE;
 
                 if (test_mode) {
-                    /* Test mode: encode on every callback (like real encoder) */
-                    test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
-                    tx_buf_idx += _bytes_per_frame;
+                    /* Test mode: encode at same rate as real encoder */
+                    if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
+                        /* Dual-frame modes: produce one _bytes_per_frame every 2 callbacks */
+                        if (mid) {
+                            test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+                            tx_buf_idx += _bytes_per_frame;
+                            mid = 0;
+                        } else {
+                            mid = 1;
+                        }
+                    } else {
+                        /* Normal modes: produce one _bytes_per_frame per callback */
+                        test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+                        tx_buf_idx += _bytes_per_frame;
+                    }
                 } else if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
                     unsigned i;
                     if (mid) {
@@ -1119,13 +1225,81 @@ skip_encode:
         svc_uart();
         lorahal.service();
 
+#ifdef ENABLE_LR20XX
+        /* Check for FIFO overflow (deferred from IRQ) */
+        {
+            extern volatile uint8_t fifo_rx_overflow;
+            if (fifo_rx_overflow) {
+                fifo_rx_overflow = 0;
+                printf("\e[31mRX FIFO overflow\e[0m\r\n");
+            }
+        }
+
+        /* Streaming RX: decode frames as they arrive from FIFO */
+        streaming_rx_decode();
+#endif
+
         if (rx_size != -1) {
+#ifdef ENABLE_LR20XX
+            /* Packet complete - read any remaining data from FIFO */
+            extern volatile uint16_t rx_fifo_read_idx;
+            extern volatile uint16_t rx_decode_idx;
+
+            /* If no data received yet, read directly from FIFO before processing */
+            uint16_t fifo_level;
+            if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK && fifo_level > 0) {
+                uint16_t bytes_to_read = fifo_level;
+                if ((rx_fifo_read_idx + bytes_to_read) <= LR20XX_BUF_SIZE) {
+                    lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], bytes_to_read);
+                    rx_fifo_read_idx += bytes_to_read;
+                }
+            }
+            /* Decode frames only up to current packet size */
+            uint16_t pkt_size = (uint16_t)rx_size;
+            uint16_t saved_fifo_idx = rx_fifo_read_idx;
+            if (rx_fifo_read_idx > pkt_size) {
+                /* Limit decode to current packet only */
+                rx_fifo_read_idx = pkt_size;
+            }
+            streaming_rx_decode();
+            rx_fifo_read_idx = saved_fifo_idx;  /* Restore for overflow calculation */
+
+            /* Set end-of-packet timeout */
+            if (rx_size < lora_payload_length) {
+                if (!test_mode)
+                    printf("short_pkt %d\r\n", rx_size);
+                end_rx_tone();
+            } else if (currently_decoding) {
+                if (!test_mode)
+                    printf("pkt_done pkt=%u fifo=%u dec=%u\r\n", pkt_size, saved_fifo_idx, rx_decode_idx);
+                terminate_spkr_at_tick = uwTick + inter_pkt_timeout;
+            }
+
+            /* Preserve any overflow data from next packet */
+            __disable_irq();
+            uint16_t overflow = (saved_fifo_idx > pkt_size) ? (saved_fifo_idx - pkt_size) : 0;
+            if (overflow > 0) {
+                /* Move overflow data to beginning of buffer */
+                memmove(LR20xx_rx_buf, &LR20xx_rx_buf[pkt_size], overflow);
+                rx_fifo_read_idx = overflow;
+                /* Track overflow stats for test mode */
+                rx_overflow_count++;
+                rx_overflow_bytes += overflow;
+            } else {
+                rx_fifo_read_idx = 0;
+            }
+            rx_decode_idx = 0;
+            __enable_irq();
+#else
             parse_rx();
+#endif
             rx_size = -1;
         }
 
         if (terminate_spkr_rx) {
-            printf("terminate_spkr_rx ");
+            extern volatile uint16_t rx_fifo_read_idx;
+            extern volatile uint16_t rx_decode_idx;
+            printf("terminate_spkr_rx fifo=%u dec=%u\r\n", rx_fifo_read_idx, rx_decode_idx);
             end_rx_tone();
             terminate_spkr_rx = 0;
         }
