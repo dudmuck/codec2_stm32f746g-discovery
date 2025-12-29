@@ -59,20 +59,61 @@ variables in main.c:
 
 
 ## LoRa operation with codec2
-codec2 mode | samples per frame |  encoded bytes per frame | LoRa BW(KHz) / SF | minimum practical LoRa packet length (bytes) | packet duration (ms) at minimum length |
-|------ | ----------------- | ------- | ------------- |---|---|
-3200     |       160         |          8 | 500 / sf9 | 32  |58 |
-2400     |       160         |          6  | 500 / sf10 |   48  |  145 |
-1600     |       320         |          8  | 500 / sf11 | 80 | 391 |
-1400     |       320         |          7  | 500 / sf11 | 49 | 269 |
-1300     |       320         |         6.5  |500 / sf11 | 39 | 227 |
-1200     |       320         |          6   | 500 / sf11 | 36 | 227   |   
-700C     |       320         |         3.5  |  500 / sf12 | 42 | 453 |
-450      |       320         |         2.25  |500 / sf12 | 18 | 290 |
+
+### Codec2 mode parameters
+
+| codec2 mode | samples/frame | frame period (ms) | encoded bytes/frame | frames/sec |
+|-------------|---------------|-------------------|---------------------|------------|
+| 3200 | 160 | 20 | 8 | 50 |
+| 2400 | 160 | 20 | 6 | 50 |
+| 1600 | 320 | 40 | 8 | 25 |
+| 1400 | 320 | 40 | 7 | 25 |
+| 1300 | 320 | 40 | 6.5 (13 bytes/2 frames) | 25 |
+| 1200 | 320 | 40 | 6 | 25 |
+| 700C | 320 | 40 | 3.5 (7 bytes/2 frames) | 25 |
+
+### Default LoRa settings (LR20xx, 500kHz BW)
+
+| codec2 mode | default SF | default payload (bytes) | frames/packet | production time (ms) | approx TOA (ms) | max streaming SF |
+|-------------|------------|-------------------------|---------------|----------------------|-----------------|------------------|
+| 3200 | 9 | 128 | 16 | 320 | 170 | 10 |
+| 2400 | 10 | 96 | 16 | 320 | 280 | 10 |
+| 1600 | 11 | 128 | 16 | 640 | 554 | 11 |
+| 1400 | 11 | 112 | 16 | 640 | 504 | 11 |
+| 1300 | 11 | 52 | 8 | 320 | 277 | 11 |
+| 1200 | 11 | 96 | 16 | 640 | 455 | 11 |
+| 700C | 12 | 56 | 16 | 640 | 530 | 12 |
+
+**Notes:**
+- Production time = frames/packet × frame period. Streaming requires TOA ≤ production time.
+- Max streaming SF shows the highest SF where streaming is feasible at 500kHz BW.
+- 1300 and 700C modes use dual-frame encoding (2 codec2 frames packed together).
+- TOA values are approximate and depend on preamble length and coding rate.
+
+### General LoRa considerations
 
 LoRa data rate selection is only possible in steps by a factor of two.  Codec2 bit-rate change will affect LoRa packet duty cycle.  When duty cycle is under 50%, the LoRa data-rate can be reduced (bandwidth reduced or SF increased).  If packet duty cycle is over 100%, then LoRa data-rate must be increased to faster.  Typical 2.5 to 2.7dB change in link budget for each step of LoRa data-rate.
 
 Latency across the radio link is due to LoRa packet duration.
+
+### Receiver sensitivity comparison (500kHz BW)
+
+| SF | SX126x (dBm) | LR2021 Sub-GHz (dBm) | LR2021 2.4GHz (dBm) | Improvement vs SX126x |
+|----|--------------|----------------------|---------------------|----------------------|
+| 7  | -117         | -122                 | -119                | +5 dB |
+| 8  | -119*        | -124.5               | -122                | +5.5 dB |
+| 9  | -122*        | -127.5               | -124.5              | +5.5 dB |
+| 10 | -124*        | -130                 | -127.5              | +6 dB |
+| 11 | -127*        | -133                 | -130                | +6 dB |
+| 12 | -129         | -135.5               | -133                | +6.5 dB |
+
+*SX126x values for SF8-11 are interpolated (datasheet only specifies SF7 and SF12 at 500kHz).
+
+**Sources:**
+- SX126x: DS_SX1261-2_V2.2 Table 3-8
+- LR2021: LR2021_V1.1_datasheet Tables 3-9 (Sub-GHz) and 3-11 (2.4GHz)
+
+The LR2021 provides 5-6.5 dB better receiver sensitivity compared to SX126x at 500kHz bandwidth, translating to roughly 2x improved range or equivalent performance at lower transmit power.
 
 ### LR20xx Streaming TX
 
