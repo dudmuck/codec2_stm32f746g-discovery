@@ -74,21 +74,22 @@ variables in main.c:
 
 ### Default LoRa settings (LR20xx, 500kHz BW)
 
-| codec2 mode | default SF | default payload (bytes) | frames/packet | production time (ms) | approx TOA (ms) | max streaming SF |
-|-------------|------------|-------------------------|---------------|----------------------|-----------------|------------------|
-| 3200 | 9 | 128 | 16 | 320 | 170 | 10 |
-| 2400 | 10 | 96 | 16 | 320 | 280 | 10 |
-| 1600 | 11 | 128 | 16 | 640 | 554 | 11 |
-| 1400 | 11 | 112 | 16 | 640 | 504 | 11 |
-| 1300 | 11 | 52 | 8 | 320 | 277 | 11 |
-| 1200 | 11 | 96 | 16 | 640 | 455 | 11 |
-| 700C | 12 | 56 | 16 | 640 | 530 | 12 |
+| codec2 mode | default SF | payload (bytes) | frames/pkt | production (ms) | TOA (ms) | max SF | latency (ms) |
+|-------------|------------|-----------------|------------|-----------------|----------|--------|--------------|
+| 3200 | 9 | 128 | 16 | 320 | 170 | 10 | 360 |
+| 2400 | 10 | 96 | 16 | 320 | 237 | 10 | 400 |
+| 1600 | 11 | 128 | 16 | 640 | 554 | 11 | 800 |
+| 1400 | 11 | 112 | 16 | 640 | 493 | 11 | 795 |
+| 1300 | 9 | 52 | 4 | 160 | 83 | 10 | 205 |
+| 1200 | 11 | 96 | 16 | 640 | 452 | 11 | 790 |
+| 700C | 11 | 56 | 8 | 320 | 288 | 11 | 470 |
 
 **Notes:**
-- Production time = frames/packet × frame period. Streaming requires TOA ≤ production time.
-- Max streaming SF shows the highest SF where streaming is feasible at 500kHz BW.
-- 1300 and 700C modes use dual-frame encoding (2 codec2 frames packed together).
-- TOA values are approximate and depend on preamble length and coding rate.
+- **TOA** = Time On Air (packet transmission duration)
+- **Production** = frames/pkt × frame period. Streaming requires TOA ≤ production.
+- **Max SF** = highest SF where streaming is feasible at 500kHz BW.
+- **Latency** = end-to-end streaming latency (TX buffer time + time to first frame at RX). With RX FIFO streaming, decoding starts as soon as the first frame arrives, not waiting for the full packet.
+- 1300 and 700C use dual-frame encoding (2 codec2 frames per radio frame). frames/pkt counts radio frames.
 
 ### General LoRa considerations
 

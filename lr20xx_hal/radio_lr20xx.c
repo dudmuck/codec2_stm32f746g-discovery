@@ -734,6 +734,7 @@ void calculate_streaming_config(void)
     extern uint8_t _bytes_per_frame;
     extern uint8_t lora_payload_length;
     extern uint8_t frames_per_sec;
+    extern unsigned inter_pkt_timeout;
 
     lr20xx_radio_lora_pkt_params_t pkt = lora_pkt_params;
     lr20xx_radio_lora_mod_params_t mod_test;
@@ -836,6 +837,16 @@ void calculate_streaming_config(void)
                 streaming_cfg.min_initial_frames = streaming_cfg.frames_per_packet - frames_during_tx;
             streaming_cfg.margin_ms = (int32_t)actual_production - (int32_t)actual_toa;
         }
+    }
+
+    /* Set inter-packet timeout based on margin + buffer.
+     * This must be longer than the gap between packets to avoid false timeouts.
+     * Gap between packets = margin_ms (when TX is faster than encoding).
+     * Add pkt_toa/2 + 50ms for safety. */
+    {
+        uint32_t actual_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
+        uint32_t margin_abs = (streaming_cfg.margin_ms > 0) ? streaming_cfg.margin_ms : 0;
+        inter_pkt_timeout = margin_abs + actual_toa / 2 + 50;
     }
 
     printf("Streaming config: feasible=%u, min_init=%u frames, rec_sf=%u, margin=%ld ms\r\n",

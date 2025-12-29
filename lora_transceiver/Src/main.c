@@ -425,43 +425,36 @@ int main(void)
             case CODEC2_MODE_3200:
                 lora_payload_length = 128;
                 sf_at_500KHz = 9;   // at 99% duty at sf10
-                inter_pkt_timeout = 40;
                 str = "3200";
                 break;
             case CODEC2_MODE_2400:
                 lora_payload_length = 96;
                 sf_at_500KHz = 10;
-                inter_pkt_timeout = 40;
                 str = "2400";
                 break;
             case CODEC2_MODE_1600:
                 lora_payload_length = 128;
                 sf_at_500KHz = 11;
-                inter_pkt_timeout = 40;
                 str = "1600";
                 break;
             case CODEC2_MODE_1400:
                 lora_payload_length = 112;
                 sf_at_500KHz = 11;
-                inter_pkt_timeout = 40;
                 str = "1400";
                 break;
             case CODEC2_MODE_1300:
                 lora_payload_length = 52;
                 sf_at_500KHz = 9;   // reduced from 11 for streaming (SF9: 83ms << 160ms production, 77ms margin)
-                inter_pkt_timeout = 40;
                 str = "1300";
                 break;
             case CODEC2_MODE_1200:
                 lora_payload_length = 96;
                 sf_at_500KHz = 11;
-                inter_pkt_timeout = 40;
                 str = "1200";
                 break;
             case CODEC2_MODE_700C:
                 lora_payload_length = 56;
                 sf_at_500KHz = 11;  // reduced from 12 for streaming (SF11: 288ms < 320ms production)
-                inter_pkt_timeout = 40;
                 str = "700C";
                 break;
             default: str = NULL;
