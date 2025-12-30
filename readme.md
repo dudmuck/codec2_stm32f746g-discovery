@@ -74,21 +74,21 @@ variables in main.c:
 
 ### Default LoRa settings (LR20xx, 500kHz BW)
 
-| codec2 mode | default SF | payload (bytes) | frames/pkt | production (ms) | TOA (ms) | max SF | latency (ms) |
-|-------------|------------|-----------------|------------|-----------------|----------|--------|--------------|
-| 3200 | 9 | 24 | 3 | 60 | 52 | 10 | 95 |
-| 2400 | 10 | 36 | 6 | 120 | 114 | 10 | 190 |
-| 1600 | 11 | 72 | 9 | 360 | 350 | 11 | 510 |
-| 1400 | 11 | 49 | 7 | 280 | 268 | 11 | 430 |
-| 1300 | 9 | 26 | 2 | 80 | 52 | 10 | 120 |
-| 1200 | 11 | 36 | 6 | 240 | 227 | 11 | 385 |
-| 700C | 11 | 49 | 7 | 280 | 268 | 11 | 430 |
+| codec2 mode | auto SF | payload (bytes) | frames/pkt | production (ms) | TOA (ms) | margin (ms) |
+|-------------|---------|-----------------|------------|-----------------|----------|-------------|
+| 3200 | 8 | 24 | 3 | 60 | 26 | 34 |
+| 2400 | 9 | 36 | 6 | 120 | 62 | 58 |
+| 1600 | 11 | 72 | 9 | 360 | 350 | 10 |
+| 1400 | 11 | 49 | 7 | 280 | 268 | 12 |
+| 1300 | 9 | 26 | 2 | 80 | 52 | 28 |
+| 1200 | 11 | 36 | 6 | 240 | 227 | 13 |
+| 700C | 11 | 49 | 7 | 280 | 268 | 12 |
 
 **Notes:**
-- **TOA** = Time On Air (packet transmission duration)
+- **Auto SF** = SF automatically selected to ensure minimum 10ms timing margin
+- **TOA** = Time On Air (packet transmission duration at auto SF)
 - **Production** = frames/pkt × frame period. Streaming requires TOA ≤ production.
-- **Max SF** = highest SF where streaming is feasible at 500kHz BW.
-- **Latency** = end-to-end streaming latency (TX buffer time + time to first frame at RX). With RX FIFO streaming, decoding starts as soon as the first frame arrives, not waiting for the full packet.
+- **Margin** = production - TOA. Minimum 10ms required for reliable streaming.
 - 1300 and 700C use dual-frame encoding (2 codec2 frames per radio frame). frames/pkt counts radio frames.
 
 ### General LoRa considerations
@@ -116,13 +116,46 @@ Latency across the radio link is due to LoRa packet duration.
 
 The LR2021 provides 5-6.5 dB better receiver sensitivity compared to SX126x at 500kHz bandwidth, translating to roughly 2x improved range or equivalent performance at lower transmit power.
 
+### Bandwidth and SF Adjustment
+
+The LoRa bandwidth can be adjusted at runtime using serial commands. SF is automatically adjusted to maintain streaming feasibility with a minimum 10ms margin.
+
+**Serial Commands:**
+- `b` - Step bandwidth down (500→406→250→203→125→101→83→62→41→31 kHz)
+- `B` - Step bandwidth up (reverse direction)
+- `f` - Step SF down (faster, shorter range)
+- `F` - Step SF up (slower, longer range)
+
+**Note:** Both TX and RX must use the same bandwidth and SF settings. When testing, step both boards together.
+
+### LR20xx Streaming Configuration at Different Bandwidths
+
+The firmware auto-adjusts SF to ensure streaming is feasible with sufficient timing margin. Lower bandwidths require lower SF values but provide better receiver sensitivity.
+
+| codec2 mode | 500kHz SF | 250kHz SF | 125kHz SF |
+|-------------|-----------|-----------|-----------|
+| 3200 | 8 | 7 | 6 |
+| 2400 | 9 | 8 | 7 |
+| 1600 | 11 | 9 | 8 |
+| 1400 | 11 | 9 | 8 |
+| 1300 | 9 | 8 | 7 |
+| 1200 | 11 | 10 | 8 |
+| 700C | 11 | 9 | 8 |
+
+**Link Budget Trade-offs:**
+- 500kHz to 250kHz: ~3 dB improvement (lower BW)
+- 250kHz to 125kHz: ~3 dB improvement (lower BW)
+- But SF reduction partially offsets: ~2.5 dB per SF step
+
+For maximum range, use 125kHz bandwidth. For lower latency, use 500kHz.
+
 ### LR20xx Streaming TX
 
 When using the LR2021 radio (build with `-DRADIO=LR2021`), the firmware supports streaming TX via the radio's FIFO threshold interrupt. This enables continuous audio streaming without gaps between packets when the radio data rate is sufficient.
 
 #### How it works
 
-On startup, the firmware analyzes timing feasibility:
+On startup, the firmware analyzes timing feasibility and automatically adjusts SF if the margin is less than 10ms:
 - Calculates packet time-on-air vs codec2 frame production time
 - Determines if streaming is feasible at current SF/BW settings
 - Recommends optimal SF if current settings are too slow

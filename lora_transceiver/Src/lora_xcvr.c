@@ -363,12 +363,55 @@ void svc_uart()
 #ifdef ENABLE_LR20XX
         printf("  fifo_rx_irqs=%lu\r\n", get_fifo_rx_irq_count());
 #endif
+    } else if (rxchar == 'b' || rxchar == 'B') {
+        /* Step bandwidth only, let adjust_sf_for_streaming() set optimal SF
+         * 'b' = BW down, 'B' = BW up */
+        bool up = (rxchar == 'B');
+        /* Must be in standby to change modulation params (per datasheet) */
+        lorahal.standby();
+        if (up && !lorahal.bw_at_highest()) {
+            appHal.step_bw(true);
+        } else if (!up && !lorahal.bw_at_lowest()) {
+            appHal.step_bw(false);
+        } else {
+            printf("BW at limit\r\n");
+        }
+#ifdef ENABLE_LR20XX
+        /* Auto-adjust SF for streaming feasibility and recalculate timing */
+        adjust_sf_for_streaming();
+        calculate_streaming_config();
+        printf("BW=%ukHz SF%u\r\n", get_bw_khz_lr20xx(), get_sf_lr20xx());
+#endif
+        /* Return to RX mode */
+        lorahal.rx(0);
+    } else if (rxchar == 'f' || rxchar == 'F') {
+        /* Step SF only: 'f' = faster (SF down), 'F' = slower (SF up) */
+        bool slower = (rxchar == 'F');
+        /* Must be in standby to change modulation params (per datasheet) */
+        lorahal.standby();
+        if (slower && !lorahal.sf_at_slowest()) {
+            appHal.step_sf(true);
+        } else if (!slower && !lorahal.sf_at_fastest()) {
+            appHal.step_sf(false);
+        } else {
+            printf("SF at limit\r\n");
+        }
+#ifdef ENABLE_LR20XX
+        /* Check if SF is feasible for streaming and recalculate timing */
+        adjust_sf_for_streaming();
+        calculate_streaming_config();
+        printf("BW=%ukHz SF%u\r\n", get_bw_khz_lr20xx(), get_sf_lr20xx());
+#endif
+        /* Return to RX mode */
+        lorahal.rx(0);
     } else {
         printf("Commands:\r\n");
         printf("  t: TX start    r: TX end (RX)\r\n");
         printf("  T: toggle test mode\r\n");
         printf("  ?: test stats  .: radio status\r\n");
         printf("  q/a: mic vol   w/s: spkr vol\r\n");
+        printf("  b/B: BW down/up (SF auto-adjusted)\r\n");
+        printf("  f/F: SF down/up (faster/slower)\r\n");
         printf("  R: reset MCU\r\n");
     }
 }
@@ -889,20 +932,42 @@ void radio_screen(const TS_StateTypeDef *TS_State)
             lorahal.standby();
         }
 
-        if (prevPressed == PRESSED_BW_DOWN && !lorahal.bw_at_lowest() && !lorahal.sf_at_fastest()) {
+        if (prevPressed == PRESSED_BW_DOWN && !lorahal.bw_at_lowest()) {
             appHal.step_bw(false);
             appHal.lcd_print_bw(0, y_base+52);
+#ifdef ENABLE_LR20XX
+            /* Auto-adjust SF for streaming feasibility and recalculate timing */
+            adjust_sf_for_streaming();
+            calculate_streaming_config();
+            appHal.lcd_print_sf(x_sf_base, y_base+52);
+#else
             appHal.step_sf(true); // keep same datarate, sf up
-        } else if (prevPressed == PRESSED_BW_UP && !lorahal.bw_at_highest() && !lorahal.sf_at_slowest()) {
+#endif
+        } else if (prevPressed == PRESSED_BW_UP && !lorahal.bw_at_highest()) {
             appHal.step_bw(true);
             appHal.lcd_print_bw(0, y_base+52);
+#ifdef ENABLE_LR20XX
+            /* Auto-adjust SF for streaming feasibility and recalculate timing */
+            adjust_sf_for_streaming();
+            calculate_streaming_config();
+            appHal.lcd_print_sf(x_sf_base, y_base+52);
+#else
             appHal.step_sf(false);    // keep same datarate, sf down
+#endif
         } else if (prevPressed == PRESSED_SF_DOWN) {
             appHal.step_sf(false);
             appHal.lcd_print_sf(x_sf_base, y_base+52);
+#ifdef ENABLE_LR20XX
+            adjust_sf_for_streaming();
+            calculate_streaming_config();
+#endif
         } else if (prevPressed == PRESSED_SF_UP) {
             appHal.step_sf(true);
             appHal.lcd_print_sf(x_sf_base, y_base+52);
+#ifdef ENABLE_LR20XX
+            adjust_sf_for_streaming();
+            calculate_streaming_config();
+#endif
         } else if (prevPressed == PRESSED_MICGAIN_UP) {
             if (AudioInVolume < 100)
                 BSP_AUDIO_IN_SetVolume(AudioInVolume+1);

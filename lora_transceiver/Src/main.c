@@ -46,6 +46,28 @@ uint8_t lora_payload_length;
 uint8_t sf_at_500KHz;
 unsigned inter_pkt_timeout;
 
+/* SF adjustment for different bandwidths.
+ * To maintain same data rate: sf_new = sf_500kHz - log2(500/BW_kHz)
+ * 500kHz: adjustment = 0
+ * 250kHz: adjustment = 1
+ * 125kHz: adjustment = 2
+ */
+#ifndef LORA_BW_KHZ
+#define LORA_BW_KHZ 500
+#endif
+
+#if LORA_BW_KHZ >= 500
+#define SF_BW_ADJUSTMENT 0
+#elif LORA_BW_KHZ >= 250
+#define SF_BW_ADJUSTMENT 1
+#elif LORA_BW_KHZ >= 125
+#define SF_BW_ADJUSTMENT 2
+#elif LORA_BW_KHZ >= 62
+#define SF_BW_ADJUSTMENT 3
+#else
+#define SF_BW_ADJUSTMENT 4
+#endif
+
 volatile int rx_size;
 volatile float rx_rssi;
 volatile float rx_snr;
@@ -460,6 +482,14 @@ int main(void)
             default: str = NULL;
         } // ..switch (selected_bitrate)
 
+        /* Apply SF adjustment for bandwidth.
+         * Lower bandwidths need lower SF to maintain same data rate.
+         * Minimum SF is 5 for LoRa. */
+        if (SF_BW_ADJUSTMENT > 0) {
+            int new_sf = sf_at_500KHz - SF_BW_ADJUSTMENT;
+            sf_at_500KHz = (new_sf >= 5) ? new_sf : 5;
+        }
+
         sprintf(buf, "%c  %s  %c", micLeftEn ? 'L' : ' ', str, micRightEn ? 'R' : ' ');
         BSP_LCD_DisplayStringAt(0, 10, (uint8_t *)buf, CENTER_MODE);
     }
@@ -481,9 +511,11 @@ int main(void)
 
     print_streaming_timing_analysis();
 
-    /* Calculate streaming configuration (SF change disabled for now) */
+    /* Auto-adjust SF if margin is insufficient for reliable streaming */
+    adjust_sf_for_streaming();
+
+    /* Calculate streaming configuration based on (possibly adjusted) SF */
     calculate_streaming_config();
-    /* apply_streaming_sf(); */  /* Disabled: may cause SF mismatch */
 
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
      * or on underflow. Threshold set to _bytes_per_frame so we get IRQ when there's room
