@@ -130,24 +130,25 @@ The LoRa bandwidth can be adjusted at runtime using serial commands. SF is autom
 
 ### LR20xx Streaming Configuration at Different Bandwidths
 
-The firmware auto-adjusts SF to ensure streaming is feasible with sufficient timing margin. Lower bandwidths require lower SF values but provide better receiver sensitivity.
+The firmware auto-adjusts SF to ensure streaming is feasible with sufficient timing margin (minimum 10ms). When bandwidth increases, SF is increased to maximize range. When bandwidth decreases, SF is reduced to maintain streaming feasibility.
 
-| codec2 mode | 500kHz SF | 250kHz SF | 125kHz SF |
-|-------------|-----------|-----------|-----------|
-| 3200 | 8 | 7 | 6 |
-| 2400 | 9 | 8 | 7 |
-| 1600 | 11 | 9 | 8 |
-| 1400 | 11 | 9 | 8 |
-| 1300 | 9 | 8 | 7 |
-| 1200 | 11 | 10 | 8 |
-| 700C | 11 | 9 | 8 |
+| codec2 mode | 1000kHz | 812kHz | 500kHz | 250kHz | 125kHz |
+|-------------|---------|--------|--------|--------|--------|
+| 3200 | SF10 | SF9 | SF8 | SF7 | SF6 |
+| 2400 | SF10 | SF10 | SF9 | SF8 | SF7 |
+| 1600 | SF12 | SF11 | SF11 | SF9 | SF8 |
+| 1400 | SF12 | SF11 | SF11 | SF9 | SF8 |
+| 1300 | SF10 | SF10 | SF9 | SF8 | SF7 |
+| 1200 | SF12 | SF11 | SF11 | SF10 | SF8 |
+| 700C | SF12 | SF11 | SF11 | SF9 | SF8 |
 
 **Link Budget Trade-offs:**
-- 500kHz to 250kHz: ~3 dB improvement (lower BW)
-- 250kHz to 125kHz: ~3 dB improvement (lower BW)
-- But SF reduction partially offsets: ~2.5 dB per SF step
+- Higher BW + higher SF = lower latency, similar range
+- Lower BW + lower SF = higher latency, potentially better range (BW dominates)
+- Each SF step: ~2.5 dB sensitivity change
+- Each BW halving: ~3 dB sensitivity improvement
 
-For maximum range, use 125kHz bandwidth. For lower latency, use 500kHz.
+For maximum range, use lower bandwidth. For lower latency, use higher bandwidth.
 
 ### LR20xx Streaming TX
 

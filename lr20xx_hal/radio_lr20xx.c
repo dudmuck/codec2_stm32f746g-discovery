@@ -725,11 +725,12 @@ void print_streaming_timing_analysis(void)
     printf("=================================\r\n\r\n");
 }
 
-/* Adjust SF to ensure streaming is feasible (TOA <= production time)
- * Returns: 1 if SF was adjusted, 0 if already feasible, -1 if no feasible SF found */
+/* Adjust SF to optimize for streaming: reduce if margin too small, increase if room available.
+ * Returns: 1 if SF was adjusted, 0 if no change needed, -1 if no feasible SF found */
 /* Minimum margin (ms) between TOA and production time for reliable streaming.
  * This accounts for timing jitter in test mode frame generation. */
 #define MIN_STREAMING_MARGIN_MS  10
+#define MAX_SF  12
 
 int adjust_sf_for_streaming(void)
 {
@@ -738,6 +739,7 @@ int adjust_sf_for_streaming(void)
     extern uint8_t frames_per_sec;
 
     lr20xx_radio_lora_pkt_params_t pkt = lora_pkt_params;
+    lr20xx_radio_lora_mod_params_t test_mod = lora_mod_params;
     uint32_t pkt_toa_ms;
     uint8_t frames_per_packet;
     uint32_t codec2_production_time;
@@ -753,34 +755,60 @@ int adjust_sf_for_streaming(void)
     margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
 
     /* Check if current SF is feasible with minimum margin */
-    if (margin >= MIN_STREAMING_MARGIN_MS) {
-        return 0;  /* Already feasible with sufficient margin */
+    if (margin < MIN_STREAMING_MARGIN_MS) {
+        /* SF too high or margin too small - need to reduce until feasible */
+        printf("SF%u TOA=%lums margin=%ldms (min=%d), reducing SF...\r\n",
+               lora_mod_params.sf, pkt_toa_ms, margin, MIN_STREAMING_MARGIN_MS);
+
+        while (lora_mod_params.sf > 5) {
+            lora_mod_params.sf--;
+            lora_mod_params.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(
+                lora_mod_params.sf, lora_mod_params.bw);
+            pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
+            margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+
+            if (margin >= MIN_STREAMING_MARGIN_MS) {
+                /* Found feasible SF with sufficient margin - apply it */
+                ASSERT_LR20XX_RC(lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params));
+                printf("Adjusted SF%u->SF%u (TOA=%lums, margin=%ldms)\r\n",
+                       original_sf, lora_mod_params.sf, pkt_toa_ms, margin);
+                return 1;  /* SF was adjusted */
+            }
+        }
+
+        /* Even SF5 doesn't meet minimum margin - apply it anyway but warn */
+        ASSERT_LR20XX_RC(lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params));
+        printf("WARNING: SF5 margin=%ldms < min=%d\r\n", margin, MIN_STREAMING_MARGIN_MS);
+        return -1;  /* No feasible SF found */
     }
 
-    /* SF too high or margin too small - need to reduce until feasible */
-    printf("SF%u TOA=%lums margin=%ldms (min=%d), reducing SF...\r\n",
-           lora_mod_params.sf, pkt_toa_ms, margin, MIN_STREAMING_MARGIN_MS);
-
-    while (lora_mod_params.sf > 5) {
-        lora_mod_params.sf--;
-        lora_mod_params.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(
-            lora_mod_params.sf, lora_mod_params.bw);
-        pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
+    /* Current SF is feasible - try to increase SF for better range if possible */
+    while (test_mod.sf < MAX_SF) {
+        test_mod.sf++;
+        test_mod.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(
+            test_mod.sf, test_mod.bw);
+        pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &test_mod);
         margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
 
-        if (margin >= MIN_STREAMING_MARGIN_MS) {
-            /* Found feasible SF with sufficient margin - apply it */
-            ASSERT_LR20XX_RC(lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params));
-            printf("Adjusted SF%u->SF%u (TOA=%lums, margin=%ldms)\r\n",
-                   original_sf, lora_mod_params.sf, pkt_toa_ms, margin);
-            return 1;  /* SF was adjusted */
+        if (margin < MIN_STREAMING_MARGIN_MS) {
+            /* This SF is too slow - use the previous one */
+            break;
         }
+        /* This higher SF is still feasible - keep it as candidate */
+        lora_mod_params.sf = test_mod.sf;
+        lora_mod_params.ppm = test_mod.ppm;
     }
 
-    /* Even SF5 doesn't meet minimum margin - apply it anyway but warn */
-    ASSERT_LR20XX_RC(lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params));
-    printf("WARNING: SF5 margin=%ldms < min=%d\r\n", margin, MIN_STREAMING_MARGIN_MS);
-    return -1;  /* No feasible SF found */
+    if (lora_mod_params.sf != original_sf) {
+        ASSERT_LR20XX_RC(lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params));
+        pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
+        margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+        printf("Adjusted SF%u->SF%u (TOA=%lums, margin=%ldms)\r\n",
+               original_sf, lora_mod_params.sf, pkt_toa_ms, margin);
+        return 1;  /* SF was adjusted */
+    }
+
+    return 0;  /* No change needed */
 }
 
 /* Streaming TX configuration - type defined in radio.h */
