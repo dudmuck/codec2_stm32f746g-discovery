@@ -8,6 +8,9 @@
 #include "lr20xx_radio_lora.h"
 #include "lr20xx_radio_fifo.h"
 #include "main.h" // for delay_ticks()
+#ifdef ENABLE_HOPPING
+#include "fhss.h"
+#endif
 
 /* Uncomment to enable TCXO instead of crystal oscillator */
 // #define LR20XX_USE_TCXO
@@ -74,6 +77,12 @@ void Radio_txDoneBottom()
     /* Only notify app of TxDone if we're not continuing with next packet */
     if (!tx_continuing && RadioEvents->TxDone_botHalf)
         RadioEvents->TxDone_botHalf();
+
+#ifdef ENABLE_HOPPING
+    /* Handle FHSS continuous preamble TX */
+    if (!tx_continuing)
+        fhss_tx_done_handler();
+#endif
 }
 
 void Radio_rx_done(uint8_t size, float rssi, float snr)
@@ -84,6 +93,10 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
 void Radio_timeout_callback(bool tx)
 {
     if (!tx) {
+#ifdef ENABLE_HOPPING
+        /* Check if FHSS is scanning - handle false CAD detection */
+        fhss_timeout_handler();
+#endif
         if (RadioEvents->RxTimeout)
             RadioEvents->RxTimeout();
 #ifdef RX_INDICATION
@@ -148,6 +161,10 @@ static void Init_lr20xx(const RadioEvents_t* e)
     LR20xx_chipModeChange = Radio_chipModeChange;
     LR20xx_dio8_topHalf = Radio_dio8_top_half;
     lorahal.irqTopHalf = LR20xx_dio8_topHalf;
+#ifdef ENABLE_HOPPING
+    LR20xx_cadDone = fhss_cad_done_handler;
+    LR20xx_preambleDetected = fhss_preamble_detected_handler;
+#endif
  
     RadioEvents = e;
 
@@ -216,8 +233,14 @@ static void Init_lr20xx(const RadioEvents_t* e)
 	ASSERT_LR20XX_RC( lr20xx_radio_common_set_rx_path(NULL, LR20XX_RADIO_COMMON_RX_PATH_LF,
 	                                                   LR20XX_RADIO_COMMON_RX_PATH_BOOST_MODE_7) );
 
-	/* Set fallback mode after TX/RX to standby RC */
+	/* Set fallback mode after TX/RX/CAD
+	 * For frequency hopping, use FS mode for faster CAD cycling
+	 * FS keeps synthesizer running, avoiding XOSC restart delay */
+#ifdef ENABLE_HOPPING
+	ASSERT_LR20XX_RC( lr20xx_radio_common_set_rx_tx_fallback_mode(NULL, LR20XX_RADIO_FALLBACK_FS) );
+#else
 	ASSERT_LR20XX_RC( lr20xx_radio_common_set_rx_tx_fallback_mode(NULL, LR20XX_RADIO_FALLBACK_STDBY_RC) );
+#endif
 
 	/* Configure all DIO pins explicitly
 	 * Options for dio_function:
@@ -264,6 +287,11 @@ static void Init_lr20xx(const RadioEvents_t* e)
 		                                    LR20XX_SYSTEM_IRQ_ERROR |
 		                                    LR20XX_SYSTEM_IRQ_FIFO_TX |
 		                                    LR20XX_SYSTEM_IRQ_FIFO_RX;
+#ifdef ENABLE_HOPPING
+		/* Add CAD and preamble interrupts for frequency hopping sync */
+		irq_mask |= LR20XX_SYSTEM_IRQ_CAD_DONE | LR20XX_SYSTEM_IRQ_CAD_DETECTED |
+		            LR20XX_SYSTEM_IRQ_PREAMBLE_DETECTED;
+#endif
 		ASSERT_LR20XX_RC( lr20xx_system_set_dio_irq_cfg(NULL, LR20XX_SYSTEM_DIO_8, irq_mask) );
 	}
 
@@ -277,6 +305,11 @@ static void Init_lr20xx(const RadioEvents_t* e)
 static void Standby_lr20xx()
 {
 	LR20xx_setStandby(LR20XX_SYSTEM_STANDBY_MODE_RC);
+}
+
+static void StandbyXosc_lr20xx()
+{
+	LR20xx_setStandby(LR20XX_SYSTEM_STANDBY_MODE_XOSC);
 }
 
 // from start_radio() at radio.c:
@@ -967,6 +1000,7 @@ void sethal_lr20xx()
 {
     lorahal.init = Init_lr20xx;
     lorahal.standby = Standby_lr20xx;
+    lorahal.standbyXosc = StandbyXosc_lr20xx;
     lorahal.loRaModemConfig = LoRaModemConfig_lr20xx;
     lorahal.setChannel = SetChannel_lr20xx;
     lorahal.set_tx_dbm = set_tx_dbm_lr20xx;

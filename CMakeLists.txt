@@ -21,6 +21,14 @@ endif()
 cmake_minimum_required(VERSION 2.8)
 
 set(RADIO SX12XX CACHE STRING "radio device family to use")
+option(ENABLE_HOPPING "Enable FCC Part 15 frequency hopping for BW < 500kHz" OFF)
+
+# Default bandwidth: 125kHz for hopping (FCC Part 15), 500kHz otherwise
+if(ENABLE_HOPPING)
+	set(LORA_BW_KHZ 125 CACHE STRING "LoRa bandwidth in kHz (125 for hopping)")
+else()
+	set(LORA_BW_KHZ 500 CACHE STRING "LoRa bandwidth in kHz (500, 250, 125, etc.)")
+endif()
 
 # Generate GIT_HASH for freedv_api.c
 if(EXISTS ${CMAKE_SOURCE_DIR}/.git)
@@ -286,7 +294,11 @@ elseif(${RADIO} STREQUAL LR2021)
 		lr20xx_driver/src/lr20xx_workarounds.c
 		lr20xx_driver/src/lr20xx_regmem.c
 	)
-	#TODO LR2021 sources here
+	if(ENABLE_HOPPING)
+		set(LORA_XCVR_SRCS ${LORA_XCVR_SRCS}
+			lr20xx_hal/fhss.c
+		)
+	endif()
 else()
 	message(SEND_ERROR "other RADIO ${RADIO}")
 endif()
@@ -308,7 +320,13 @@ elseif(${RADIO} STREQUAL LR2021)
 		${PROJECT_SOURCE_DIR}/lr20xx_driver/inc
 	)
 	target_compile_definitions(${LORA_TARGET} PRIVATE -DENABLE_LR20XX)
+	if(ENABLE_HOPPING)
+		target_compile_definitions(${LORA_TARGET} PRIVATE -DENABLE_HOPPING)
+		message(STATUS "Frequency hopping enabled for FCC Part 15 compliance")
+	endif()
 endif()
+target_compile_definitions(${LORA_TARGET} PRIVATE -DLORA_BW_KHZ=${LORA_BW_KHZ})
+message(STATUS "LoRa bandwidth: ${LORA_BW_KHZ} kHz")
 target_include_directories(${LORA_TARGET} PRIVATE
 	${PROJECT_SOURCE_DIR}/lora_transceiver/Inc
 	${RADIO_INCLUDES}

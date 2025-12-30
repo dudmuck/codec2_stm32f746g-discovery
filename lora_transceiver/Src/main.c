@@ -21,6 +21,9 @@
 #include "main.h"
 #include "radio.h"
 #include "lr20xx_radio_fifo.h"
+#ifdef ENABLE_HOPPING
+#include "fhss.h"
+#endif
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -516,6 +519,11 @@ int main(void)
 
     /* Calculate streaming configuration based on (possibly adjusted) SF */
     calculate_streaming_config();
+
+#ifdef ENABLE_HOPPING
+    /* Initialize frequency hopping module */
+    fhss_init();
+#endif
 
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
      * or on underflow. Threshold set to _bytes_per_frame so we get IRQ when there's room

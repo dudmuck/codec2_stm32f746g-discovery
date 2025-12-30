@@ -12,6 +12,9 @@
 #include "lr20xx.h"
 #include "lr20xx_radio_fifo.h"
 #endif
+#ifdef ENABLE_HOPPING
+#include "fhss.h"
+#endif
 
 #define DEFAULT_MIC_GAIN        95
 
@@ -404,6 +407,15 @@ void svc_uart()
 #endif
         /* Return to RX mode */
         lorahal.rx(0);
+#ifdef ENABLE_HOPPING
+    } else if (rxchar == 'H' || rxchar == 'h' || rxchar == 'i' || rxchar == 'I' ||
+               rxchar == 'n' || rxchar == 'c' || rxchar == 'p' ||
+               rxchar == '+' || rxchar == '-' ||
+               rxchar == 'P' || rxchar == 'L' || rxchar == 'l' ||
+               (rxchar >= '1' && rxchar <= '4')) {
+        /* FHSS commands */
+        fhss_uart_command(rxchar);
+#endif
     } else {
         printf("Commands:\r\n");
         printf("  t: TX start    r: TX end (RX)\r\n");
@@ -413,6 +425,19 @@ void svc_uart()
         printf("  b/B: BW down/up (SF auto-adjusted)\r\n");
         printf("  f/F: SF down/up (faster/slower)\r\n");
         printf("  R: reset MCU\r\n");
+#ifdef ENABLE_HOPPING
+        printf("FHSS commands:\r\n");
+        printf("  H: toggle FHSS enable\r\n");
+        printf("  h: start/stop CAD scan (RX)\r\n");
+        printf("  P: toggle continuous preamble TX\r\n");
+        printf("  L/l: adjust preamble length +/-16\r\n");
+        printf("  i/I: FHSS status/stats\r\n");
+        printf("  n: hop to next random channel\r\n");
+        printf("  c: print current channel\r\n");
+        printf("  1-4: set CAD symbol count\r\n");
+        printf("  +/-: adjust CAD detect peak\r\n");
+        printf("  p: toggle PNR delta (best-effort CAD)\r\n");
+#endif
     }
 }
 
@@ -1092,6 +1117,15 @@ void AudioLoopback_demo(void)
     while (1)
     {
         TS_StateTypeDef this_TS_State;
+
+#ifdef ENABLE_HOPPING
+        /* Fast polling mode during CAD scan - skip slow LCD/touchscreen */
+        if (fhss_is_scanning()) {
+            svc_uart();  /* Still handle UART for 'h' stop command */
+            fhss_poll(); /* Tight polling until CAD done */
+            continue;
+        }
+#endif
 
         BSP_TS_GetState(&this_TS_State);
         if (this_TS_State.touchDetected != prev_TS_State.touchDetected ||

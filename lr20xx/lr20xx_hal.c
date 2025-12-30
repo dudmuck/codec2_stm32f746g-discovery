@@ -64,10 +64,11 @@ static bool check_stat()
 
 static int lr20xx_hal_wait_on_busy( void )
 {
-	uint8_t cnt = 0;
+	/* Tight polling loop - BUSY typically clears in microseconds.
+	 * At 200MHz, 100000 iterations ~= 500µs timeout (plenty of margin). */
+	volatile uint32_t cnt = 0;
 	while (BUSY) {
-		delay_ticks(1);
-		if (++cnt > 40) {
+		if (++cnt > 100000) {
 			return -1;
 		}
 	}

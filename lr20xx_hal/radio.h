@@ -50,8 +50,9 @@ typedef struct {
 
 typedef struct {
     void (*init)(const RadioEvents_t*);
-     
-    void (*standby)(void);
+
+    void (*standby)(void);      /* Standby with RC oscillator */
+    void (*standbyXosc)(void);  /* Standby with XOSC (faster FS/TX/RX transitions) */
     void (*loRaModemConfig)(unsigned bwKHz, uint8_t sf, uint8_t cr);
     void (*setChannel)(unsigned hz);
 

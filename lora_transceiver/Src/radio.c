@@ -97,7 +97,9 @@ const RadioEvents_t rev = {
     /* CadDone  */          NULL
 };
 
+#ifndef LORA_BW_KHZ
 #define LORA_BW_KHZ             500
+#endif
 #define TX_DBM                  20
 #define CF_HZ               917600000
 

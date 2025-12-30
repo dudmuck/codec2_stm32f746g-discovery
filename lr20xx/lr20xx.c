@@ -135,6 +135,17 @@ bool LR20xx_service()
                 LR20xx_fifoRx(rx_fifo_flags);
         }
 
+        if (irqFlags & LR20XX_SYSTEM_IRQ_CAD_DONE) {
+            bool detected = (irqFlags & LR20XX_SYSTEM_IRQ_CAD_DETECTED) != 0;
+            if (LR20xx_cadDone)
+                LR20xx_cadDone(detected);
+        }
+
+        if (irqFlags & LR20XX_SYSTEM_IRQ_PREAMBLE_DETECTED) {
+            if (LR20xx_preambleDetected)
+                LR20xx_preambleDetected();
+        }
+
         if (irqFlags & LR20XX_SYSTEM_IRQ_ERROR) {
             lr20xx_system_errors_t errors;
             if (lr20xx_system_get_errors(NULL, &errors) == LR20XX_STATUS_OK) {
