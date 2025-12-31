@@ -160,6 +160,11 @@ void fhss_set_lfsr_state(uint16_t state);
  * payload_len: codec2 payload size (header added automatically) */
 void fhss_configure_data_mode(uint8_t payload_len);
 
+/* Configure RX expected data packet length
+ * Call before starting scan to set expected codec2 payload size
+ * This is used to configure implicit header mode after sync */
+void fhss_set_rx_payload_len(uint8_t payload_len);
+
 /* Send data packet with automatic hopping
  * data: codec2 payload (header prepended automatically)
  * len: payload length (must match configured data_pkt_len)

@@ -89,14 +89,35 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
 {
 #ifdef ENABLE_HOPPING
     /* Check if this is an FHSS sync packet */
-    if (fhss_cfg.state == FHSS_STATE_RX_DATA ||
-        fhss_cfg.state == FHSS_STATE_RX_SYNC) {
+    if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
         if (fhss_rx_sync_packet(LR20xx_rx_buf, size)) {
             /* Sync packet processed - RX is now synchronized with TX.
-             * Don't pass to application, or optionally notify sync complete. */
+             * Configure data mode and start RX for data packets. */
             printf("FHSS synchronized (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
+            /* Note: fhss_configure_data_mode() needs payload length.
+             * For now, just start RX - app will configure data mode. */
+            lorahal.rx(0);
             return;
         }
+    }
+
+    /* Check if this is an FHSS data packet */
+    if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+        int payload_len = fhss_rx_data_packet(LR20xx_rx_buf, size);
+        if (payload_len > 0) {
+            /* Strip FHSS header: move codec2 payload to start of buffer */
+            for (int i = 0; i < payload_len; i++) {
+                LR20xx_rx_buf[i] = LR20xx_rx_buf[FHSS_DATA_HDR_SIZE + i];
+            }
+            /* Pass codec2 payload to application */
+            RadioEvents->RxDone((uint8_t)payload_len, rssi, snr);
+            /* Start RX for next packet */
+            fhss_rx_data();
+            return;
+        }
+        /* Invalid data packet - start RX for retry */
+        fhss_rx_data();
+        return;
     }
 #endif
     RadioEvents->RxDone(size, rssi, snr);

@@ -373,6 +373,20 @@ void fhss_start_tx_sync(void)
     lorahal.send(FHSS_SYNC_PKT_SIZE);
 }
 
+/* Expected payload length for RX (set by app before scanning) */
+static uint8_t fhss_rx_payload_len = 0;
+
+void fhss_set_rx_payload_len(uint8_t payload_len)
+{
+    fhss_rx_payload_len = payload_len;
+    printf("FHSS: RX expected payload=%u bytes\r\n", payload_len);
+}
+
+static uint8_t fhss_get_rx_payload_len(void)
+{
+    return fhss_rx_payload_len;
+}
+
 bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size)
 {
     if (size < FHSS_SYNC_PKT_SIZE) {
@@ -397,7 +411,16 @@ bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size)
     /* Hop to the next channel that TX will use */
     fhss_set_channel(sync_pkt->next_channel);
 
-    fhss_cfg.state = FHSS_STATE_RX_DATA;
+    /* Configure data mode with expected payload length */
+    uint8_t rx_payload = fhss_get_rx_payload_len();
+    if (rx_payload > 0) {
+        fhss_configure_data_mode(rx_payload);
+    } else {
+        /* No expected payload set - just set state, app must configure */
+        fhss_cfg.state = FHSS_STATE_RX_DATA;
+        printf("FHSS: warning - RX payload length not set\r\n");
+    }
+
     return true;
 }
 

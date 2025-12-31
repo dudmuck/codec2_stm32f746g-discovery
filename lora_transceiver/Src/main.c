@@ -523,6 +523,8 @@ int main(void)
 #ifdef ENABLE_HOPPING
     /* Initialize frequency hopping module */
     fhss_init();
+    /* Set expected RX payload length for FHSS data mode configuration */
+    fhss_set_rx_payload_len(lora_payload_length);
 #endif
 
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
