@@ -577,10 +577,39 @@ void fhss_rx_data_timeout_handler(void)
 
 void fhss_tx_done_handler(void)
 {
-    if (fhss_cfg.state == FHSS_STATE_TX_PREAMBLE && fhss_cfg.tx_continuous) {
-        /* Send another preamble on a new random channel */
-        fhss_start_tx_sync();
+    if (fhss_cfg.state == FHSS_STATE_TX_PREAMBLE) {
+        if (fhss_cfg.tx_continuous) {
+            /* Continuous mode: Send another preamble on a new random channel */
+            fhss_start_tx_sync();
+        } else {
+            /* Normal PTT: Sync packet sent, transition to data mode.
+             * The application must call fhss_configure_data_mode() with payload length
+             * before sending data. Set state to TX_DATA to signal sync complete. */
+            fhss_cfg.state = FHSS_STATE_TX_DATA;
+            printf("FHSS: sync TX done, ready for data\r\n");
+        }
+    } else if (fhss_cfg.state == FHSS_STATE_TX_DATA) {
+        /* Data packet TX done - stay in TX_DATA state for next packet */
     } else {
+        fhss_cfg.state = FHSS_STATE_IDLE;
+    }
+}
+
+bool fhss_is_tx_sync(void)
+{
+    return fhss_cfg.state == FHSS_STATE_TX_PREAMBLE;
+}
+
+bool fhss_is_tx_data_ready(void)
+{
+    return fhss_cfg.state == FHSS_STATE_TX_DATA;
+}
+
+void fhss_tx_stop(void)
+{
+    if (fhss_cfg.state == FHSS_STATE_TX_PREAMBLE ||
+        fhss_cfg.state == FHSS_STATE_TX_DATA) {
+        printf("FHSS: TX stopped\r\n");
         fhss_cfg.state = FHSS_STATE_IDLE;
     }
 }

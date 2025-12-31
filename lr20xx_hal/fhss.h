@@ -182,6 +182,15 @@ void fhss_rx_data(void);
  * Continues hopping for N channels, then returns to CAD scan */
 void fhss_rx_data_timeout_handler(void);
 
+/* Check if FHSS is in TX sync (preamble) mode */
+bool fhss_is_tx_sync(void);
+
+/* Check if FHSS is ready to send data (sync complete) */
+bool fhss_is_tx_data_ready(void);
+
+/* Stop FHSS TX and return to idle */
+void fhss_tx_stop(void);
+
 /* Get recommended CAD parameters for given SF */
 void fhss_get_cad_params_for_sf(uint8_t sf, uint8_t cad_symb_nb,
                                  uint8_t *detect_peak);

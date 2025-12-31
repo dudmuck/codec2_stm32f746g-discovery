@@ -90,6 +90,11 @@ uint32_t rx_overflow_count;     // packets with overflow data from next packet
 uint32_t rx_overflow_bytes;     // total overflow bytes preserved
 uint32_t last_rx_pkt_tick;      // timestamp of last received packet
 
+#ifdef ENABLE_HOPPING
+/* FHSS data mode configured flag - set after first data mode config */
+static uint8_t fhss_data_mode_configured = 0;
+#endif
+
 #ifdef ENABLE_LR20XX
 extern uint32_t get_fifo_rx_irq_count(void);
 #endif
@@ -546,6 +551,18 @@ void tx_encoded(uint8_t tx_nbytes)
 
     txing = 1;
     txStartAt = uwTick;
+
+#ifdef ENABLE_HOPPING
+    if (fhss_cfg.enabled && fhss_is_tx_data_ready()) {
+        /* FHSS mode: send data packet with automatic hopping */
+        if (fhss_send_data(lorahal.tx_buf, tx_nbytes) != 0) {
+            printf("\e[31mFHSS send error\e[0m\r\n");
+        }
+        appHal.lcd_printOpMode(true);
+        return;
+    }
+#endif
+
 #ifdef ENABLE_LR20XX
     /* Use streaming TX: send current produced data, FIFO callback sends rest */
     {
@@ -1154,7 +1171,30 @@ void AudioLoopback_demo(void)
                 stream_state = STREAM_IDLE;
                 tx_buf_produced = 0;
 #endif
+#ifdef ENABLE_HOPPING
+                if (fhss_cfg.enabled) {
+                    /* Start FHSS: send sync packet first */
+                    fhss_data_mode_configured = 0;
+                    fhss_start_tx_sync();
+                    printf("FHSS: sending sync packet\r\n");
+                }
+#endif
             }
+
+#ifdef ENABLE_HOPPING
+            /* FHSS: wait for sync TX to complete before encoding audio */
+            if (fhss_cfg.enabled && fhss_is_tx_sync()) {
+                lorahal.service();
+                goto skip_encode;  /* Skip audio encoding during sync TX */
+            }
+
+            /* FHSS: configure data mode after sync complete */
+            if (fhss_cfg.enabled && fhss_is_tx_data_ready() && !fhss_data_mode_configured) {
+                fhss_configure_data_mode(lora_payload_length);
+                fhss_data_mode_configured = 1;
+                printf("FHSS: data mode configured, payload=%u\r\n", lora_payload_length);
+            }
+#endif
 
             if (audio_rec_buffer_state != BUFFER_OFFSET_NONE) {
 #ifdef ENABLE_LR20XX
@@ -1297,7 +1337,7 @@ void AudioLoopback_demo(void)
 #endif
 
             } // ..if (audio_rec_buffer_state != BUFFER_OFFSET_NONE)
-#ifdef ENABLE_LR20XX
+#if defined(ENABLE_LR20XX) || defined(ENABLE_HOPPING)
 skip_encode:
             (void)0;  /* Empty statement for label */
 #endif
@@ -1309,6 +1349,13 @@ skip_encode:
 #ifdef ENABLE_LR20XX
                 /* Stop buffering next packet - we're done transmitting */
                 stream_state = STREAM_IDLE;
+#endif
+#ifdef ENABLE_HOPPING
+                if (fhss_cfg.enabled) {
+                    /* Stop FHSS TX - RX will timeout and return to scan */
+                    fhss_tx_stop();
+                    fhss_data_mode_configured = 0;
+                }
 #endif
                 if (txing) {
                     rx_start_at_tx_done = 1;
