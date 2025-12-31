@@ -108,6 +108,8 @@ void Radio_timeout_callback(bool tx)
 #ifdef ENABLE_HOPPING
         /* Check if FHSS is scanning - handle false CAD detection */
         fhss_timeout_handler();
+        /* Check if FHSS is in data mode - hop and continue or return to scan */
+        fhss_rx_data_timeout_handler();
 #endif
         if (RadioEvents->RxTimeout)
             RadioEvents->RxTimeout();

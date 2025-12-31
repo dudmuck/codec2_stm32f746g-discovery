@@ -22,6 +22,9 @@
 #define FHSS_NUM_CHANNELS       50
 #define FHSS_MAX_DWELL_MS       400
 
+/* RX timeout threshold before returning to CAD scan */
+#define FHSS_RX_TIMEOUT_MAX     5   /* Max consecutive timeouts before rescan */
+
 /* Sync packet format - sent by TX to synchronize RX LFSR (explicit header mode) */
 #define FHSS_SYNC_MARKER        0xAA
 typedef struct __attribute__((packed)) {
@@ -85,6 +88,8 @@ typedef struct {
     uint32_t sweep_start_ms;      /* Timestamp when current sweep started */
     uint32_t sweep_count;         /* Number of complete sweeps */
     uint32_t last_sweep_ms;       /* Duration of last complete sweep */
+    uint32_t rx_timeout_count;    /* Total RX timeouts during data mode */
+    uint32_t resync_count;        /* Number of times RX returned to scan */
 } fhss_stats_t;
 
 /* FHSS configuration */
@@ -98,6 +103,7 @@ typedef struct {
     uint8_t  rx_seq_num;          /* Expected RX sequence number */
     uint32_t dwell_start_ms;      /* Timestamp when current channel dwell started */
     uint16_t pkts_on_channel;     /* Packets sent/received on current channel */
+    uint8_t  rx_timeout_consec;   /* Consecutive RX timeouts (reset on RxDone) */
     fhss_cad_config_t cad_cfg;    /* CAD configuration */
     fhss_state_t state;           /* Current state */
     fhss_stats_t stats;           /* Statistics */
@@ -171,6 +177,10 @@ void fhss_check_hop(void);
 
 /* Start RX for next data packet on current or next channel */
 void fhss_rx_data(void);
+
+/* Handle RX timeout during data mode
+ * Continues hopping for N channels, then returns to CAD scan */
+void fhss_rx_data_timeout_handler(void);
 
 /* Get recommended CAD parameters for given SF */
 void fhss_get_cad_params_for_sf(uint8_t sf, uint8_t cad_symb_nb,

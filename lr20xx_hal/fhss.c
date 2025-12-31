@@ -57,6 +57,7 @@ void fhss_init(void)
     fhss_cfg.rx_seq_num = 0;
     fhss_cfg.dwell_start_ms = 0;
     fhss_cfg.pkts_on_channel = 0;
+    fhss_cfg.rx_timeout_consec = 0;
 
     /* Default CAD configuration: 2 symbols, best-effort enabled */
     fhss_cfg.cad_cfg.cad_symb_nb = 2;
@@ -73,6 +74,8 @@ void fhss_init(void)
     fhss_cfg.stats.sweep_start_ms = 0;
     fhss_cfg.stats.sweep_count = 0;
     fhss_cfg.stats.last_sweep_ms = 0;
+    fhss_cfg.stats.rx_timeout_count = 0;
+    fhss_cfg.stats.resync_count = 0;
 
     /* Seed LFSR with a varying value (could use ADC noise, timer, etc.) */
     extern uint32_t HAL_GetTick(void);
@@ -405,9 +408,10 @@ void fhss_configure_data_mode(uint8_t payload_len)
     /* Store data packet length (codec2 payload + FHSS header) */
     fhss_cfg.data_pkt_len = payload_len + FHSS_DATA_HDR_SIZE;
 
-    /* Reset sequence numbers */
+    /* Reset sequence numbers and timeout counter */
     fhss_cfg.tx_seq_num = 0;
     fhss_cfg.rx_seq_num = 0;
+    fhss_cfg.rx_timeout_consec = 0;
 
     /* Start dwell timer */
     fhss_cfg.dwell_start_ms = HAL_GetTick();
@@ -523,6 +527,9 @@ int fhss_rx_data_packet(const uint8_t *data, uint8_t size)
     fhss_cfg.rx_seq_num = hdr->seq_num + 1;
     fhss_cfg.pkts_on_channel++;
 
+    /* Reset consecutive timeout counter on successful reception */
+    fhss_cfg.rx_timeout_consec = 0;
+
     /* Return payload length (excluding header) */
     return size - FHSS_DATA_HDR_SIZE;
 }
@@ -534,6 +541,38 @@ void fhss_rx_data(void)
 
     /* Start RX with timeout */
     lorahal.rx(0);  /* 0 = continuous RX, or set appropriate timeout */
+}
+
+void fhss_rx_data_timeout_handler(void)
+{
+    /* Only handle timeouts in RX_DATA state */
+    if (fhss_cfg.state != FHSS_STATE_RX_DATA) {
+        return;
+    }
+
+    fhss_cfg.stats.rx_timeout_count++;
+    fhss_cfg.rx_timeout_consec++;
+
+    if (fhss_cfg.rx_timeout_consec < FHSS_RX_TIMEOUT_MAX) {
+        /* Continue hopping - TX might still be transmitting */
+        uint8_t old_ch = fhss_cfg.current_channel;
+        fhss_hop();
+        printf("FHSS: RX timeout %u/%u, hop ch%u->ch%u\r\n",
+               fhss_cfg.rx_timeout_consec, FHSS_RX_TIMEOUT_MAX,
+               old_ch, fhss_cfg.current_channel);
+
+        /* Restart RX on new channel */
+        lorahal.rx(0);
+    } else {
+        /* Too many consecutive timeouts - TX probably stopped */
+        printf("FHSS: %u consecutive timeouts, returning to CAD scan\r\n",
+               fhss_cfg.rx_timeout_consec);
+        fhss_cfg.stats.resync_count++;
+        fhss_cfg.rx_timeout_consec = 0;
+
+        /* Return to CAD scan to find next sync preamble */
+        fhss_start_scan();
+    }
 }
 
 void fhss_tx_done_handler(void)
@@ -631,6 +670,8 @@ void fhss_print_stats(void)
     if (fhss_cfg.stats.sync_found_count > 0) {
         printf("Last sync time: %lu ms\r\n", fhss_cfg.stats.sync_time_ms);
     }
+    printf("RX timeouts: %lu\r\n", fhss_cfg.stats.rx_timeout_count);
+    printf("Resyncs (returned to scan): %lu\r\n", fhss_cfg.stats.resync_count);
     printf("=======================\r\n\r\n");
 }
 
