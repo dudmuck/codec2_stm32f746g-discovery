@@ -87,6 +87,18 @@ void Radio_txDoneBottom()
 
 void Radio_rx_done(uint8_t size, float rssi, float snr)
 {
+#ifdef ENABLE_HOPPING
+    /* Check if this is an FHSS sync packet */
+    if (fhss_cfg.state == FHSS_STATE_RX_DATA ||
+        fhss_cfg.state == FHSS_STATE_RX_SYNC) {
+        if (fhss_rx_sync_packet(LR20xx_rx_buf, size)) {
+            /* Sync packet processed - RX is now synchronized with TX.
+             * Don't pass to application, or optionally notify sync complete. */
+            printf("FHSS synchronized (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
+            return;
+        }
+    }
+#endif
     RadioEvents->RxDone(size, rssi, snr);
 }
 

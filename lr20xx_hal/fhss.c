@@ -51,6 +51,13 @@ void fhss_init(void)
     fhss_cfg.state = FHSS_STATE_IDLE;
     fhss_cfg.preamble_len_symb = 128;  /* Default sync preamble length */
 
+    /* Data packet configuration */
+    fhss_cfg.data_pkt_len = 0;  /* Set by fhss_configure_data_mode() */
+    fhss_cfg.tx_seq_num = 0;
+    fhss_cfg.rx_seq_num = 0;
+    fhss_cfg.dwell_start_ms = 0;
+    fhss_cfg.pkts_on_channel = 0;
+
     /* Default CAD configuration: 2 symbols, best-effort enabled */
     fhss_cfg.cad_cfg.cad_symb_nb = 2;
     fhss_cfg.cad_cfg.pnr_delta = 8;  /* Best-effort CAD enabled */
@@ -326,6 +333,17 @@ bool fhss_is_scanning(void)
            fhss_cfg.state == FHSS_STATE_RX_SYNC;
 }
 
+uint16_t fhss_get_lfsr_state(void)
+{
+    return lfsr_state;
+}
+
+void fhss_set_lfsr_state(uint16_t state)
+{
+    if (state == 0) state = 0xACE1;  /* Avoid zero state */
+    lfsr_state = state;
+}
+
 void fhss_start_tx_sync(void)
 {
     /* Select random channel for sync */
@@ -334,17 +352,188 @@ void fhss_start_tx_sync(void)
 
     fhss_cfg.state = FHSS_STATE_TX_PREAMBLE;
 
-    printf("TX sync on ch%u (%.3f MHz), preamble=%u symbols\r\n",
+    /* Prepare sync packet with current LFSR state and next channel */
+    fhss_sync_pkt_t *sync_pkt = (fhss_sync_pkt_t *)lorahal.tx_buf;
+    sync_pkt->marker = FHSS_SYNC_MARKER;
+    sync_pkt->lfsr_state = lfsr_state;
+    sync_pkt->next_channel = fhss_random_channel();  /* Pre-compute next channel */
+
+    printf("TX sync on ch%u (%.3f MHz), lfsr=0x%04X, next_ch=%u, preamble=%u\r\n",
            sync_channel,
            (float)fhss_get_channel_freq(sync_channel) / 1000000.0f,
+           sync_pkt->lfsr_state,
+           sync_pkt->next_channel,
            fhss_cfg.preamble_len_symb);
 
-    /* Configure long preamble and send minimal packet */
+    /* Configure long preamble and send sync packet */
     lorahal.loRaPacketConfig(fhss_cfg.preamble_len_symb, false, true, false);
+    lorahal.send(FHSS_SYNC_PKT_SIZE);
+}
 
-    /* Send 1-byte sync packet (just to complete the preamble TX) */
-    lorahal.tx_buf[0] = 0xAA;  /* Sync marker */
-    lorahal.send(1);
+bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size)
+{
+    if (size < FHSS_SYNC_PKT_SIZE) {
+        return false;
+    }
+
+    const fhss_sync_pkt_t *sync_pkt = (const fhss_sync_pkt_t *)data;
+
+    if (sync_pkt->marker != FHSS_SYNC_MARKER) {
+        printf("FHSS: Invalid sync marker 0x%02X\r\n", sync_pkt->marker);
+        return false;
+    }
+
+    /* Synchronize LFSR state with transmitter */
+    fhss_set_lfsr_state(sync_pkt->lfsr_state);
+
+    printf("FHSS sync: lfsr=0x%04X, next_ch=%u (%.3f MHz)\r\n",
+           sync_pkt->lfsr_state,
+           sync_pkt->next_channel,
+           (float)fhss_get_channel_freq(sync_pkt->next_channel) / 1000000.0f);
+
+    /* Hop to the next channel that TX will use */
+    fhss_set_channel(sync_pkt->next_channel);
+
+    fhss_cfg.state = FHSS_STATE_RX_DATA;
+    return true;
+}
+
+void fhss_configure_data_mode(uint8_t payload_len)
+{
+    extern uint32_t HAL_GetTick(void);
+
+    /* Store data packet length (codec2 payload + FHSS header) */
+    fhss_cfg.data_pkt_len = payload_len + FHSS_DATA_HDR_SIZE;
+
+    /* Reset sequence numbers */
+    fhss_cfg.tx_seq_num = 0;
+    fhss_cfg.rx_seq_num = 0;
+
+    /* Start dwell timer */
+    fhss_cfg.dwell_start_ms = HAL_GetTick();
+    fhss_cfg.pkts_on_channel = 0;
+
+    /* Configure radio for implicit header mode with fixed packet length */
+    lorahal.loRaPacketConfig(FHSS_DATA_PREAMBLE_LEN,
+                              true,   /* fixLen = implicit header */
+                              true,   /* crcOn */
+                              false); /* invIQ */
+
+    printf("FHSS data mode: pkt_len=%u (payload=%u + hdr=%u), implicit header\r\n",
+           fhss_cfg.data_pkt_len, payload_len, FHSS_DATA_HDR_SIZE);
+}
+
+void fhss_check_hop(void)
+{
+    extern uint32_t HAL_GetTick(void);
+    uint32_t now = HAL_GetTick();
+    uint32_t dwell_time = now - fhss_cfg.dwell_start_ms;
+
+    /* Check if we've exceeded 90% of max dwell time (leave margin) */
+    if (dwell_time >= (FHSS_MAX_DWELL_MS * 9 / 10)) {
+        uint8_t old_ch = fhss_cfg.current_channel;
+
+        /* Hop to next channel using synchronized LFSR */
+        fhss_hop();
+
+        /* Reset dwell timer */
+        fhss_cfg.dwell_start_ms = now;
+        fhss_cfg.pkts_on_channel = 0;
+
+        printf("FHSS hop: ch%u->ch%u after %lums\r\n",
+               old_ch, fhss_cfg.current_channel, dwell_time);
+    }
+}
+
+int fhss_send_data(const uint8_t *data, uint8_t len)
+{
+    fhss_data_hdr_t *hdr;
+
+    if (len + FHSS_DATA_HDR_SIZE != fhss_cfg.data_pkt_len) {
+        printf("FHSS: payload len %u != configured %u\r\n",
+               len, fhss_cfg.data_pkt_len - FHSS_DATA_HDR_SIZE);
+        return -1;
+    }
+
+    /* Check if we need to hop before sending */
+    fhss_check_hop();
+
+    /* Build packet: header + payload */
+    hdr = (fhss_data_hdr_t *)lorahal.tx_buf;
+    hdr->marker = FHSS_DATA_MARKER;
+    hdr->seq_num = fhss_cfg.tx_seq_num++;
+    hdr->channel = fhss_cfg.current_channel;
+
+    /* Copy payload after header */
+    for (uint8_t i = 0; i < len; i++) {
+        lorahal.tx_buf[FHSS_DATA_HDR_SIZE + i] = data[i];
+    }
+
+    fhss_cfg.state = FHSS_STATE_TX_DATA;
+    fhss_cfg.pkts_on_channel++;
+
+    lorahal.send(fhss_cfg.data_pkt_len);
+    return 0;
+}
+
+int fhss_rx_data_packet(const uint8_t *data, uint8_t size)
+{
+    const fhss_data_hdr_t *hdr;
+    uint8_t expected_seq;
+    int8_t seq_diff;
+
+    if (size < FHSS_DATA_HDR_SIZE) {
+        return -1;
+    }
+
+    hdr = (const fhss_data_hdr_t *)data;
+
+    if (hdr->marker != FHSS_DATA_MARKER) {
+        /* Not a data packet - might be sync packet or garbage */
+        return -1;
+    }
+
+    /* Verify channel - resync if different */
+    if (hdr->channel != fhss_cfg.current_channel) {
+        printf("FHSS: channel mismatch, resyncing ch%u->ch%u\r\n",
+               fhss_cfg.current_channel, hdr->channel);
+        fhss_set_channel(hdr->channel);
+        fhss_cfg.dwell_start_ms = 0;  /* Reset dwell timer - TX controls timing */
+        fhss_cfg.pkts_on_channel = 0;
+    }
+
+    /* Check sequence number for lost packets */
+    expected_seq = fhss_cfg.rx_seq_num;
+    seq_diff = (int8_t)(hdr->seq_num - expected_seq);
+
+    if (seq_diff != 0) {
+        if (seq_diff > 0 && seq_diff < 128) {
+            /* Missed packets */
+            printf("FHSS: missed %d packets (seq %u, expected %u)\r\n",
+                   seq_diff, hdr->seq_num, expected_seq);
+        } else if (seq_diff < 0 && seq_diff > -128) {
+            /* Duplicate/old packet */
+            printf("FHSS: duplicate packet (seq %u, expected %u)\r\n",
+                   hdr->seq_num, expected_seq);
+            return -1;
+        }
+    }
+
+    /* Update expected sequence number */
+    fhss_cfg.rx_seq_num = hdr->seq_num + 1;
+    fhss_cfg.pkts_on_channel++;
+
+    /* Return payload length (excluding header) */
+    return size - FHSS_DATA_HDR_SIZE;
+}
+
+void fhss_rx_data(void)
+{
+    /* Check if we need to hop */
+    fhss_check_hop();
+
+    /* Start RX with timeout */
+    lorahal.rx(0);  /* 0 = continuous RX, or set appropriate timeout */
 }
 
 void fhss_tx_done_handler(void)

@@ -22,6 +22,29 @@
 #define FHSS_NUM_CHANNELS       50
 #define FHSS_MAX_DWELL_MS       400
 
+/* Sync packet format - sent by TX to synchronize RX LFSR (explicit header mode) */
+#define FHSS_SYNC_MARKER        0xAA
+typedef struct __attribute__((packed)) {
+    uint8_t  marker;           /* Sync marker (0xAA) */
+    uint16_t lfsr_state;       /* Current LFSR state for channel hopping */
+    uint8_t  next_channel;     /* Next channel TX will hop to */
+} fhss_sync_pkt_t;
+
+#define FHSS_SYNC_PKT_SIZE      sizeof(fhss_sync_pkt_t)
+
+/* Data packet header - prepended to codec2 data (implicit header mode)
+ * The packet uses implicit mode with fixed length for efficiency.
+ * Total packet = header (3 bytes) + codec2 payload */
+#define FHSS_DATA_MARKER        0x55
+typedef struct __attribute__((packed)) {
+    uint8_t  marker;           /* Data marker (0x55) - distinguishes from sync */
+    uint8_t  seq_num;          /* Sequence number for lost packet detection */
+    uint8_t  channel;          /* Current channel - RX can verify/resync */
+} fhss_data_hdr_t;
+
+#define FHSS_DATA_HDR_SIZE      sizeof(fhss_data_hdr_t)
+#define FHSS_DATA_PREAMBLE_LEN  8   /* Short preamble for data packets */
+
 /* Channel plan for 902-928 MHz band with 125kHz bandwidth
  * Channel spacing: 520kHz (26MHz / 50 channels)
  * Start frequency: 902.2 MHz (guard band from 902 MHz edge)
@@ -70,6 +93,11 @@ typedef struct {
     bool     tx_continuous;       /* Continuous preamble TX mode */
     uint16_t preamble_len_symb;   /* Preamble length in symbols for sync TX */
     uint8_t  current_channel;     /* Current channel index (0-49) */
+    uint8_t  data_pkt_len;        /* Fixed payload length for data packets (implicit mode) */
+    uint8_t  tx_seq_num;          /* TX sequence number */
+    uint8_t  rx_seq_num;          /* Expected RX sequence number */
+    uint32_t dwell_start_ms;      /* Timestamp when current channel dwell started */
+    uint16_t pkts_on_channel;     /* Packets sent/received on current channel */
     fhss_cad_config_t cad_cfg;    /* CAD configuration */
     fhss_state_t state;           /* Current state */
     fhss_stats_t stats;           /* Statistics */
@@ -110,6 +138,39 @@ void fhss_start_tx_sync(void);
 
 /* TX done handler - call from TxDone callback for continuous mode */
 void fhss_tx_done_handler(void);
+
+/* Process received sync packet - extracts LFSR state to synchronize hopping
+ * Returns true if valid sync packet, false otherwise */
+bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size);
+
+/* Get current LFSR state (for debugging/display) */
+uint16_t fhss_get_lfsr_state(void);
+
+/* Set LFSR state (for synchronization) */
+void fhss_set_lfsr_state(uint16_t state);
+
+/* Configure data packet mode (implicit header, fixed length)
+ * Call after sync to set up for data transmission/reception
+ * payload_len: codec2 payload size (header added automatically) */
+void fhss_configure_data_mode(uint8_t payload_len);
+
+/* Send data packet with automatic hopping
+ * data: codec2 payload (header prepended automatically)
+ * len: payload length (must match configured data_pkt_len)
+ * Returns: 0 on success, -1 on error */
+int fhss_send_data(const uint8_t *data, uint8_t len);
+
+/* Process received data packet
+ * Returns: payload length (excluding header) on success, -1 on error
+ * Checks sequence number for lost packets */
+int fhss_rx_data_packet(const uint8_t *data, uint8_t size);
+
+/* Check if hop is needed (dwell time exceeded) and perform hop
+ * Call periodically during data transfer */
+void fhss_check_hop(void);
+
+/* Start RX for next data packet on current or next channel */
+void fhss_rx_data(void);
 
 /* Get recommended CAD parameters for given SF */
 void fhss_get_cad_params_for_sf(uint8_t sf, uint8_t cad_symb_nb,
