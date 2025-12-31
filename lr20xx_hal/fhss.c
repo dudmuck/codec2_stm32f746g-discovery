@@ -750,6 +750,14 @@ void fhss_uart_command(char cmd)
         case 'H':
             fhss_cfg.enabled = !fhss_cfg.enabled;
             printf("FHSS %s\r\n", fhss_cfg.enabled ? "enabled" : "disabled");
+            if (fhss_cfg.enabled) {
+                /* Start CAD scan when FHSS is enabled (RX side) */
+                fhss_start_scan();
+            } else {
+                /* Stop scanning and return to idle */
+                fhss_cfg.state = FHSS_STATE_IDLE;
+                lorahal.standby();
+            }
             break;
 
         case 'h':
