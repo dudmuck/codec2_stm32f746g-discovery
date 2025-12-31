@@ -45,7 +45,7 @@ static const uint8_t cad_detect_peak_table[8][4] = {
 
 void fhss_init(void)
 {
-    fhss_cfg.enabled = false;
+    fhss_cfg.enabled = true;  /* Enabled by default when built with ENABLE_HOPPING */
     fhss_cfg.tx_continuous = false;
     fhss_cfg.current_channel = 0;
     fhss_cfg.state = FHSS_STATE_IDLE;
@@ -246,14 +246,15 @@ void fhss_cad_done_handler(bool detected)
 
 void fhss_preamble_detected_handler(void)
 {
-    /* Preamble detected confirms CAD detection was a real signal, not noise */
+    /* Preamble detected confirms CAD detection was a real signal, not noise.
+     * Stay in RX_SYNC state - we need to receive the actual sync packet
+     * before we can transition to RX_DATA. The state change happens in
+     * fhss_rx_sync_packet() after the packet is successfully received. */
     if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
         printf("Preamble confirmed on ch%u (%.3f MHz)\r\n",
                fhss_cfg.current_channel,
                (float)fhss_get_channel_freq(fhss_cfg.current_channel) / 1000000.0f);
-        fhss_cfg.stats.sync_found_count++;
-        /* Transition to RX_DATA state - waiting for full packet */
-        fhss_cfg.state = FHSS_STATE_RX_DATA;
+        /* Don't change state yet - wait for sync packet in fhss_rx_sync_packet() */
     }
 }
 
@@ -410,6 +411,9 @@ bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size)
 
     /* Hop to the next channel that TX will use */
     fhss_set_channel(sync_pkt->next_channel);
+
+    /* Update stats - sync actually received */
+    fhss_cfg.stats.sync_found_count++;
 
     /* Configure data mode with expected payload length */
     uint8_t rx_payload = fhss_get_rx_payload_len();

@@ -525,6 +525,8 @@ int main(void)
     fhss_init();
     /* Set expected RX payload length for FHSS data mode configuration */
     fhss_set_rx_payload_len(lora_payload_length);
+    /* Start CAD scan automatically - RX mode by default */
+    fhss_start_scan();
 #endif
 
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
