@@ -1138,9 +1138,17 @@ void AudioLoopback_demo(void)
 #ifdef ENABLE_HOPPING
         /* Fast polling mode during CAD scan - skip slow LCD/touchscreen */
         if (fhss_is_scanning()) {
-            svc_uart();  /* Still handle UART for 'h' stop command */
-            fhss_poll(); /* Tight polling until CAD done */
-            continue;
+            /* Check for PTT button or 't' command to switch to TX */
+            if ((BSP_PB_GetState(BUTTON_KEY) == GPIO_PIN_SET) || uart_tx_active) {
+                printf("FHSS: stopping scan for TX\r\n");
+                fhss_cfg.state = FHSS_STATE_IDLE;
+                lorahal.standby();
+                /* Fall through to normal PTT handling below */
+            } else {
+                svc_uart();  /* Handle UART for 'h' stop command, 't' TX start */
+                fhss_poll(); /* Tight polling until CAD done */
+                continue;
+            }
         }
 #endif
 
