@@ -485,16 +485,18 @@ int fhss_send_data(const uint8_t *data, uint8_t len)
     /* Check if we need to hop before sending */
     fhss_check_hop();
 
-    /* Build packet: header + payload */
+    /* Shift payload to make room for header.
+     * IMPORTANT: Copy backwards to handle overlapping buffers correctly
+     * (when data == lorahal.tx_buf, which is the normal case). */
+    for (int i = len - 1; i >= 0; i--) {
+        lorahal.tx_buf[FHSS_DATA_HDR_SIZE + i] = data[i];
+    }
+
+    /* Build header at start of buffer */
     hdr = (fhss_data_hdr_t *)lorahal.tx_buf;
     hdr->marker = FHSS_DATA_MARKER;
     hdr->seq_num = fhss_cfg.tx_seq_num++;
     hdr->channel = fhss_cfg.current_channel;
-
-    /* Copy payload after header */
-    for (uint8_t i = 0; i < len; i++) {
-        lorahal.tx_buf[FHSS_DATA_HDR_SIZE + i] = data[i];
-    }
 
     fhss_cfg.state = FHSS_STATE_TX_DATA;
     fhss_cfg.pkts_on_channel++;
