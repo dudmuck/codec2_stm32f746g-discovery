@@ -9,6 +9,9 @@
 #else
 #include "lr20xx.h"
 #include "lr20xx_radio_fifo.h"
+#ifdef ENABLE_HOPPING
+#include "fhss.h"
+#endif
 #endif /* !ENABLE_LR20XX */
 #include "pinDefs.h"
 
@@ -67,11 +70,30 @@ void fifoRxCB(lr20xx_radio_fifo_flag_t rx_fifo_flags)
     }
     if (rx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH) {
         fifo_rx_irq_count++;
+
+        /* Only read from FIFO if radio is in RX mode.
+         * Reading while in standby or transitioning can cause CMD_STATUS_FAIL. */
+        extern lr20xx_system_chip_modes_t LR20xx_chipMode;
+        if (LR20xx_chipMode != LR20XX_SYSTEM_CHIP_MODE_RX) {
+            return;
+        }
+
         /* RX FIFO has data available - read and decode early */
         uint16_t fifo_level;
         if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK) {
             extern uint8_t _bytes_per_frame;
-            /* Read complete frames only */
+
+#ifdef ENABLE_HOPPING
+            /* In FHSS data mode, don't use FIFO streaming.
+             * With implicit header mode, noise can trigger false preamble detection
+             * and fill the FIFO with garbage. Instead, wait for RX_DONE which
+             * validates CRC and reads the complete packet. */
+            if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+                return;  /* Skip FIFO read - let RX_DONE handle it */
+            }
+#endif
+
+            /* Non-FHSS: Read complete frames only */
             uint16_t frames_available = fifo_level / _bytes_per_frame;
             uint16_t bytes_to_read = frames_available * _bytes_per_frame;
             if (bytes_to_read > 0 && (rx_fifo_read_idx + bytes_to_read) <= LR20XX_BUF_SIZE) {
@@ -100,7 +122,7 @@ const RadioEvents_t rev = {
 #ifndef LORA_BW_KHZ
 #define LORA_BW_KHZ             500
 #endif
-#define TX_DBM                  20
+#define TX_DBM                  /*20*/	0 // TODO temporary low-power for bench testing
 #define CF_HZ               917600000
 
 /************************************************************/
@@ -224,8 +246,8 @@ void start_radio()
 
     lorahal.set_tx_dbm(TX_DBM);
 
-                      // preambleLen, fixLen, crcOn, invIQ
-    lorahal.loRaPacketConfig(8, false, false, false);      // crcOff
+                      // preambleLen, fixLen, crcOn, invIQ, payloadLen
+    lorahal.loRaPacketConfig(8, false, false, false, 0);      // crcOff, explicit header (payloadLen not used)
 
     lorahal.postcfgreadback();
 }

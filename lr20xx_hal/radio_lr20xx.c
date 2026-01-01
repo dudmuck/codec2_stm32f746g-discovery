@@ -90,13 +90,20 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
 #ifdef ENABLE_HOPPING
     /* Check if this is an FHSS sync packet */
     if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
+        /* Reject sync packets with poor signal quality (likely noise/false detect) */
+        if (snr < 0.0f || rssi < -110.0f) {
+            printf("FHSS: rejecting weak sync (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
+            /* Resume scanning */
+            fhss_start_scan();
+            return;
+        }
         if (fhss_rx_sync_packet(LR20xx_rx_buf, size)) {
             /* Sync packet processed - RX is now synchronized with TX.
              * Configure data mode and start RX for data packets. */
             printf("FHSS synchronized (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
-            /* Note: fhss_configure_data_mode() needs payload length.
-             * For now, just start RX - app will configure data mode. */
-            lorahal.rx(0);
+            /* Use fhss_rx_data() to properly set up streaming state
+             * (clears FIFO, sets rx_decode_idx to skip header) */
+            fhss_rx_data();
             return;
         }
     }
@@ -105,13 +112,10 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
     if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
         int payload_len = fhss_rx_data_packet(LR20xx_rx_buf, size);
         if (payload_len > 0) {
-            /* Strip FHSS header: move codec2 payload to start of buffer */
-            for (int i = 0; i < payload_len; i++) {
-                LR20xx_rx_buf[i] = LR20xx_rx_buf[FHSS_DATA_HDR_SIZE + i];
-            }
-            /* Pass codec2 payload to application */
-            RadioEvents->RxDone((uint8_t)payload_len, rssi, snr);
-            /* Start RX for next packet */
+            /* Don't strip header - rx_decode_idx is set to skip it.
+             * Pass full packet size; streaming decode uses rx_decode_idx offset. */
+            RadioEvents->RxDone(size, rssi, snr);
+            /* Start RX for next packet (resets rx_decode_idx to skip header) */
             fhss_rx_data();
             return;
         }
@@ -340,11 +344,13 @@ static void Init_lr20xx(const RadioEvents_t* e)
 static void Standby_lr20xx()
 {
 	LR20xx_setStandby(LR20XX_SYSTEM_STANDBY_MODE_RC);
+	LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_STBY_RC;
 }
 
 static void StandbyXosc_lr20xx()
 {
 	LR20xx_setStandby(LR20XX_SYSTEM_STANDBY_MODE_XOSC);
+	LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_STBY_XOSC;
 }
 
 // from start_radio() at radio.c:
@@ -542,13 +548,18 @@ static bool service_lr20xx()
     return LR20xx_service();
 }
 
-static void LoRaPacketConfig_lr20xx(unsigned preambleLen, bool fixLen, bool crcOn, bool invIQ)
+static void LoRaPacketConfig_lr20xx(unsigned preambleLen, bool fixLen, bool crcOn, bool invIQ, uint8_t payloadLen)
 {
 	lora_pkt_params.preamble_len_in_symb = preambleLen;
 	lora_pkt_params.pkt_mode = fixLen ? LR20XX_RADIO_LORA_PKT_IMPLICIT : LR20XX_RADIO_LORA_PKT_EXPLICIT;
 	lora_pkt_params.crc = crcOn ? LR20XX_RADIO_LORA_CRC_ENABLED : LR20XX_RADIO_LORA_CRC_DISABLED;
 	lora_pkt_params.iq = invIQ ? LR20XX_RADIO_LORA_IQ_INVERTED : LR20XX_RADIO_LORA_IQ_STANDARD;
-	/* pld_len_in_bytes will be set by Send_lr20xx() */
+	/* Set payload length - required for implicit header mode RX, TX will override via Send_lr20xx() */
+	lora_pkt_params.pld_len_in_bytes = payloadLen;
+
+	printf("PktCfg: pre=%u %s crc=%s len=%u\r\n", preambleLen,
+	       fixLen ? "implicit" : "explicit",
+	       crcOn ? "ON" : "OFF", payloadLen);
 
 	ASSERT_LR20XX_RC( lr20xx_radio_lora_set_packet_params(NULL, &lora_pkt_params) );
 }

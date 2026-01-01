@@ -264,9 +264,12 @@ void BSP_AUDIO_IN_Error_CallBack(void)
   * @param None
   * @retval None
   */
+static volatile uint32_t audio_callback_cnt = 0;
+
 void BSP_AUDIO_IN_TransferComplete_CallBack(void)
 {
     audio_rec_buffer_state = BUFFER_OFFSET_FULL;
+    audio_callback_cnt++;
 }
 
 /**
@@ -277,6 +280,7 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(void)
 void BSP_AUDIO_IN_HalfTransfer_CallBack(void)
 {
     audio_rec_buffer_state = BUFFER_OFFSET_HALF;
+    audio_callback_cnt++;
 }
 
 #define LFSR_INIT       0x1ff
@@ -1084,6 +1088,10 @@ void AudioLoopback_demo(void)
     uint8_t mid = 0;
     TS_StateTypeDef prev_TS_State;
     uint8_t tx_buf_idx = 0;
+    static uint32_t enc_enter_cnt = 0;
+    static uint32_t test_mode_enc_cnt = 0;
+    static uint32_t normal_enc_cnt = 0;
+    static uint32_t fhss_data_pkt_cnt = 0;
 
     BSP_LCD_SetFont(&Font12);
     /* Initialize Audio Recorder */
@@ -1167,6 +1175,11 @@ void AudioLoopback_demo(void)
                 user_button_pressed = 1;
                 audio_rec_buffer_state = BUFFER_OFFSET_NONE;
                 /* rx -> tx mode switch */
+                audio_callback_cnt = 0;  /* Reset counter at TX start */
+                enc_enter_cnt = 0;
+                test_mode_enc_cnt = 0;
+                normal_enc_cnt = 0;
+                fhss_data_pkt_cnt = 0;
                 printf("keyup\r\n");
                 lorahal.standby();
                 appHal.lcd_printOpMode(false);
@@ -1205,23 +1218,38 @@ void AudioLoopback_demo(void)
 #endif
 
             if (audio_rec_buffer_state != BUFFER_OFFSET_NONE) {
+                enc_enter_cnt++;
 #ifdef ENABLE_LR20XX
                 /* State machine: handle WAIT_TX state - skip encoding, wait for TX to complete */
                 if (stream_state == STREAM_WAIT_TX) {
-                    /* Check if all FIFO data has been sent to radio.
-                     * If so, we can start buffering the next packet while TX continues. */
-                    if (tx_fifo_idx >= tx_total_size) {
-                        /* FIFO fully loaded - start buffering next packet */
+                    static uint32_t wait_tx_cnt = 0;
+                    wait_tx_cnt++;
+#ifdef ENABLE_HOPPING
+                    /* FHSS mode doesn't use FIFO streaming - go back to ENCODING */
+                    if (fhss_cfg.enabled) {
                         tx_buf_idx = 0;
                         mid = 0;
                         tx_buf_produced = 0;
-                        stream_state = STREAM_BUFFERING_NEXT;
+                        stream_state = STREAM_ENCODING;
                         /* Fall through to encode for next packet */
-                    } else {
-                        /* Still loading FIFO - wait */
-                        audio_rec_buffer_state = BUFFER_OFFSET_NONE;
-                        lorahal.service();
-                        goto skip_encode;
+                    } else
+#endif /* ENABLE_HOPPING */
+                    {
+                        /* Check if all FIFO data has been sent to radio.
+                         * If so, we can start buffering the next packet while TX continues. */
+                        if (tx_fifo_idx >= tx_total_size) {
+                            /* FIFO fully loaded - start buffering next packet */
+                            tx_buf_idx = 0;
+                            mid = 0;
+                            tx_buf_produced = 0;
+                            stream_state = STREAM_BUFFERING_NEXT;
+                            /* Fall through to encode for next packet */
+                        } else {
+                            /* Still loading FIFO - wait */
+                            audio_rec_buffer_state = BUFFER_OFFSET_NONE;
+                            lorahal.service();
+                            goto skip_encode;
+                        }
                     }
                 }
 
@@ -1246,6 +1274,16 @@ void AudioLoopback_demo(void)
                 }
 #endif
 
+#ifdef ENABLE_HOPPING
+                /* FHSS: during sync, limit buffer to one packet to avoid overflow */
+                if (fhss_cfg.enabled && !fhss_is_tx_data_ready() &&
+                    tx_buf_idx >= lora_payload_length) {
+                    audio_rec_buffer_state = BUFFER_OFFSET_NONE;
+                    lorahal.service();
+                    goto skip_encode;
+                }
+#endif
+
                 if (audio_rec_buffer_state == BUFFER_OFFSET_FULL) {
                     inPtr = (short*)audio_buffer_in_B;
                 } else if (audio_rec_buffer_state == BUFFER_OFFSET_HALF) {
@@ -1254,6 +1292,7 @@ void AudioLoopback_demo(void)
                 audio_rec_buffer_state = BUFFER_OFFSET_NONE;
 
                 if (test_mode) {
+                    test_mode_enc_cnt++;
                     /* Test mode: encode at same rate as real encoder */
                     if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
                         /* Dual-frame modes: produce one _bytes_per_frame every 2 callbacks */
@@ -1266,6 +1305,7 @@ void AudioLoopback_demo(void)
                         }
                     } else {
                         /* Normal modes: produce one _bytes_per_frame per callback */
+                        normal_enc_cnt++;
                         test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
                         tx_buf_idx += _bytes_per_frame;
                     }
@@ -1316,26 +1356,46 @@ void AudioLoopback_demo(void)
                 /* Update producer index so FIFO callback can send new data */
                 tx_buf_produced = tx_buf_idx;
 
-                /* State machine: ENCODING -> TX_ACTIVE when enough data */
-                if (stream_state == STREAM_ENCODING &&
-                    tx_buf_idx >= get_streaming_initial_bytes()) {
-                    tx_encoded(lora_payload_length);
-                    stream_state = STREAM_TX_ACTIVE;
-                }
+#ifdef ENABLE_HOPPING
+                /* FHSS mode: simple packet-by-packet TX (no FIFO streaming) */
+                if (fhss_cfg.enabled) {
+                    /* Only send next packet when radio is free (previous TX done) */
+                    if (fhss_is_tx_data_ready() && !txing &&
+                        tx_buf_idx >= lora_payload_length) {
+                        fhss_data_pkt_cnt++;
+                        tx_encoded(lora_payload_length);
+                        tx_buf_idx = 0;
+                        mid = 0;
+                        tx_buf_produced = 0;
+                        /* Stay in ENCODING state for next packet */
+                        stream_state = STREAM_ENCODING;
+                    }
+                    /* During sync or TX busy, just buffer but don't TX */
+                } else
+#endif /* ENABLE_HOPPING */
+                {
+                    /* LR20XX FIFO streaming mode (non-FHSS) */
+                    /* State machine: ENCODING -> TX_ACTIVE when enough data */
+                    if (stream_state == STREAM_ENCODING &&
+                        tx_buf_idx >= get_streaming_initial_bytes()) {
+                        tx_encoded(lora_payload_length);
+                        stream_state = STREAM_TX_ACTIVE;
+                    }
 
-                /* State machine: TX_ACTIVE -> WAIT_TX when all frames encoded */
-                if (stream_state == STREAM_TX_ACTIVE &&
-                    tx_buf_idx >= lora_payload_length) {
-                    stream_state = STREAM_WAIT_TX;
-                    /* Don't reset tx_buf_idx - STREAM_WAIT_TX will check FIFO
-                     * and transition to STREAM_BUFFERING_NEXT when ready */
-                }
+                    /* State machine: TX_ACTIVE -> WAIT_TX when all frames encoded */
+                    if (stream_state == STREAM_TX_ACTIVE &&
+                        tx_buf_idx >= lora_payload_length) {
+                        stream_state = STREAM_WAIT_TX;
+                        /* Don't reset tx_buf_idx - STREAM_WAIT_TX will check FIFO
+                         * and transition to STREAM_BUFFERING_NEXT when ready */
+                    }
 
-                /* STREAM_BUFFERING_NEXT: continue encoding for next packet.
-                 * We stay in this state until TxDone fires (handled in radio_lr20xx.c).
-                 * No state transition needed here - just keep filling the buffer.
-                 * When tx_buf_idx reaches lora_payload_length, we have a full packet
-                 * ready and will start TX immediately when current TX completes. */
+                    /* STREAM_BUFFERING_NEXT: continue encoding for next packet.
+                     * We stay in this state until TxDone fires (handled in radio_lr20xx.c).
+                     * No state transition needed here - just keep filling the buffer.
+                     * When tx_buf_idx reaches lora_payload_length, we have a full packet
+                     * ready and will start TX immediately when current TX completes. */
+                }
 #else
                 if (tx_buf_idx >= lora_payload_length) {
                     tx_encoded(tx_buf_idx);
@@ -1353,7 +1413,7 @@ skip_encode:
             if (user_button_pressed == 1) {
                 /* tx -> rx mode switch */
                 user_button_pressed = 0;
-                printf("unkey %s tx_buf_idx:%u\r\n", txing ? "txing" : "-", tx_buf_idx);
+                printf("unkey idx:%u cb:%lu enc:%lu tm:%lu ne:%lu pk:%lu\r\n", tx_buf_idx, audio_callback_cnt, enc_enter_cnt, test_mode_enc_cnt, normal_enc_cnt, fhss_data_pkt_cnt);
 #ifdef ENABLE_LR20XX
                 /* Stop buffering next packet - we're done transmitting */
                 stream_state = STREAM_IDLE;
@@ -1379,6 +1439,20 @@ skip_encode:
         svc_uart();
         lorahal.service();
 
+#ifdef ENABLE_HOPPING
+        /* Periodic hop check for FHSS RX - ensures we hop even if no packets received.
+         * This catches the case where TX hops away and RX stops receiving. */
+        if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+            extern lr20xx_system_chip_modes_t LR20xx_chipMode;
+            uint8_t was_rx = (LR20xx_chipMode == LR20XX_SYSTEM_CHIP_MODE_RX);
+            fhss_check_hop();
+            /* If hop occurred (was RX, now not RX), restart RX */
+            if (was_rx && LR20xx_chipMode != LR20XX_SYSTEM_CHIP_MODE_RX) {
+                lorahal.rx(0);
+            }
+        }
+#endif
+
 #ifdef ENABLE_LR20XX
         /* Check for FIFO overflow (deferred from IRQ) */
         {
@@ -1399,13 +1473,20 @@ skip_encode:
             extern volatile uint16_t rx_fifo_read_idx;
             extern volatile uint16_t rx_decode_idx;
 
-            /* If no data received yet, read directly from FIFO before processing */
-            uint16_t fifo_level;
-            if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK && fifo_level > 0) {
-                uint16_t bytes_to_read = fifo_level;
-                if ((rx_fifo_read_idx + bytes_to_read) <= LR20XX_BUF_SIZE) {
-                    lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], bytes_to_read);
-                    rx_fifo_read_idx += bytes_to_read;
+            /* If no data received yet, read directly from FIFO before processing.
+             * Skip for FHSS data mode - packets are complete at RX_DONE and reading
+             * more would grab data from the NEXT packet, corrupting decode. */
+#ifdef ENABLE_HOPPING
+            if (fhss_cfg.state != FHSS_STATE_RX_DATA)
+#endif
+            {
+                uint16_t fifo_level;
+                if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK && fifo_level > 0) {
+                    uint16_t bytes_to_read = fifo_level;
+                    if ((rx_fifo_read_idx + bytes_to_read) <= LR20XX_BUF_SIZE) {
+                        lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], bytes_to_read);
+                        rx_fifo_read_idx += bytes_to_read;
+                    }
                 }
             }
             /* Decode frames only up to current packet size */
@@ -1415,6 +1496,15 @@ skip_encode:
                 /* Limit decode to current packet only */
                 rx_fifo_read_idx = pkt_size;
             }
+#ifdef ENABLE_HOPPING
+            /* In FHSS data mode, skip the 3-byte header when decoding.
+             * Only set rx_decode_idx if streaming decode hasn't started yet.
+             * If it already ran (at line 1453), rx_decode_idx > FHSS_DATA_HDR_SIZE
+             * and resetting would cause re-decoding of the same frames. */
+            if (fhss_cfg.state == FHSS_STATE_RX_DATA && rx_decode_idx < FHSS_DATA_HDR_SIZE) {
+                rx_decode_idx = FHSS_DATA_HDR_SIZE;
+            }
+#endif
             streaming_rx_decode();
             rx_fifo_read_idx = saved_fifo_idx;  /* Restore for overflow calculation */
 
@@ -1426,7 +1516,19 @@ skip_encode:
             } else if (currently_decoding) {
                 if (!test_mode)
                     printf("pkt_done pkt=%u fifo=%u dec=%u\r\n", pkt_size, saved_fifo_idx, rx_decode_idx);
-                terminate_spkr_at_tick = uwTick + inter_pkt_timeout;
+#ifdef ENABLE_HOPPING
+                /* In FHSS mode, RX timeout must be SHORTER than TX dwell period.
+                 * TX hops at 90% of FHSS_MAX_DWELL_MS = 360ms.
+                 * RX should hop at 80% = 320ms to stay ahead and catch TX's first
+                 * packet on the new channel. If we use 400ms, RX always lags behind
+                 * by one channel because it hops AFTER TX. */
+                if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+                    terminate_spkr_at_tick = uwTick + (FHSS_MAX_DWELL_MS * 8 / 10);
+                } else
+#endif
+                {
+                    terminate_spkr_at_tick = uwTick + inter_pkt_timeout;
+                }
             }
 
             /* Preserve any overflow data from next packet */
@@ -1442,7 +1544,16 @@ skip_encode:
             } else {
                 rx_fifo_read_idx = 0;
             }
+#ifdef ENABLE_HOPPING
+            /* In FHSS data mode, skip the 3-byte header when decoding */
+            if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+                rx_decode_idx = FHSS_DATA_HDR_SIZE;
+            } else {
+                rx_decode_idx = 0;
+            }
+#else
             rx_decode_idx = 0;
+#endif
             __enable_irq();
 #else
             parse_rx();
@@ -1453,9 +1564,29 @@ skip_encode:
         if (terminate_spkr_rx) {
             extern volatile uint16_t rx_fifo_read_idx;
             extern volatile uint16_t rx_decode_idx;
-            printf("terminate_spkr_rx fifo=%u dec=%u\r\n", rx_fifo_read_idx, rx_decode_idx);
-            end_rx_tone();
-            terminate_spkr_rx = 0;
+#ifdef ENABLE_HOPPING
+            /* In FHSS mode, timeout means TX hopped away. Hop to follow TX. */
+            if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+                uint8_t old_ch = fhss_cfg.current_channel;
+                uint8_t next_ch = fhss_random_channel();  /* Advance LFSR */
+                lorahal.standby();
+                fhss_set_channel(next_ch);
+                fhss_cfg.pkts_on_channel = 0;
+                /* Keep dwell_start_ms at 0 so timer starts when we receive a packet */
+                fhss_cfg.dwell_start_ms = 0;
+                lorahal.rx(0);  /* Restart RX on new channel */
+                printf("FHSS timeout hop: ch%u->ch%u\r\n", old_ch, next_ch);
+                /* After timeout hop, wait 80% of dwell period before timing out again.
+                 * This keeps RX ahead of TX (which hops at 90% of dwell). */
+                terminate_spkr_at_tick = uwTick + (FHSS_MAX_DWELL_MS * 8 / 10);
+                terminate_spkr_rx = 0;
+            } else
+#endif
+            {
+                printf("terminate_spkr_rx fifo=%u dec=%u\r\n", rx_fifo_read_idx, rx_decode_idx);
+                end_rx_tone();
+                terminate_spkr_rx = 0;
+            }
         }
 
     } // .. while(1)

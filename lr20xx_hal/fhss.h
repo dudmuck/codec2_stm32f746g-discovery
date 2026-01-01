@@ -48,6 +48,11 @@ typedef struct __attribute__((packed)) {
 #define FHSS_DATA_HDR_SIZE      sizeof(fhss_data_hdr_t)
 #define FHSS_DATA_PREAMBLE_LEN  8   /* Short preamble for data packets */
 
+/* Number of sync packets to send before data mode.
+ * Multiple syncs give RX more chances to catch sync if stuck on false CAD.
+ * Each sync is on a different random channel. */
+#define FHSS_SYNC_REPEAT_COUNT  3
+
 /* Channel plan for 902-928 MHz band with 125kHz bandwidth
  * Channel spacing: 520kHz (26MHz / 50 channels)
  * Start frequency: 902.2 MHz (guard band from 902 MHz edge)
@@ -98,12 +103,16 @@ typedef struct {
     bool     tx_continuous;       /* Continuous preamble TX mode */
     uint16_t preamble_len_symb;   /* Preamble length in symbols for sync TX */
     uint8_t  current_channel;     /* Current channel index (0-49) */
+    uint8_t  tx_next_channel;     /* Next channel promised in sync packet (for first hop) */
+    uint8_t  tx_sync_count;       /* Number of sync packets sent (for repeat mechanism) */
+    uint16_t tx_sync_lfsr;        /* LFSR state to send in sync packets (saved at first sync) */
     uint8_t  data_pkt_len;        /* Fixed payload length for data packets (implicit mode) */
     uint8_t  tx_seq_num;          /* TX sequence number */
     uint8_t  rx_seq_num;          /* Expected RX sequence number */
     uint32_t dwell_start_ms;      /* Timestamp when current channel dwell started */
     uint16_t pkts_on_channel;     /* Packets sent/received on current channel */
     uint8_t  rx_timeout_consec;   /* Consecutive RX timeouts (reset on RxDone) */
+    uint8_t  preamble_confirm_count; /* Preamble confirmations during RX_SYNC */
     fhss_cad_config_t cad_cfg;    /* CAD configuration */
     fhss_state_t state;           /* Current state */
     fhss_stats_t stats;           /* Statistics */

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "lr20xx.h"
+#include "lr20xx_hal.h"
 #include "lr20xx_system.h"
 #include "lr20xx_radio_common.h"
 #include "lr20xx_radio_fifo.h"
@@ -81,8 +82,11 @@ bool LR20xx_service()
         lr20xx_system_irq_mask_t irqFlags;
         ASSERT_LR20XX_RC( lr20xx_system_get_and_clear_irq_status(NULL, &irqFlags) );
 
+        /* Update chip mode from radio status (updated after every SPI transaction) */
+        extern lr20xx_stat_t stat;
+        LR20xx_chipMode = stat.bits.chip_mode;
+
         if (irqFlags & LR20XX_SYSTEM_IRQ_TX_DONE) {
-			LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_STBY_RC;
             if (LR20xx_txDone)
                 LR20xx_txDone();
         }
@@ -106,6 +110,7 @@ bool LR20xx_service()
                     } else {
                         /* Normal RX - read entire packet */
                         ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, LR20xx_rx_buf, size) );
+                        rx_fifo_read_idx = size;  /* Update index so streaming_rx_decode() sees data */
                     }
                     if (LR20xx_rxDone) {
                         lr20xx_radio_lora_packet_status_t pkt_status = { 0 };

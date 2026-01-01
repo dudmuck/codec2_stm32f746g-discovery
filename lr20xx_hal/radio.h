@@ -58,8 +58,8 @@ typedef struct {
 
     void (*set_tx_dbm)(int8_t dbm);
      
-                   // preambleLen, fixLen, crcOn, invIQ
-    void (*loRaPacketConfig)(unsigned preambleLen, bool fixLen, bool crcOn, bool invIQ);
+                   // preambleLen, fixLen, crcOn, invIQ, payloadLen
+    void (*loRaPacketConfig)(unsigned preambleLen, bool fixLen, bool crcOn, bool invIQ, uint8_t payloadLen);
     int (*send)(uint8_t size/*, timestamp_t maxListenTime, timestamp_t channelFreeTime, int rssiThresh*/);
 
     void (*printOpMode)(void);
