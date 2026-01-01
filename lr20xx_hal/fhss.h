@@ -23,7 +23,7 @@
 #define FHSS_MAX_DWELL_MS       400
 
 /* RX timeout threshold before returning to CAD scan */
-#define FHSS_RX_TIMEOUT_MAX     5   /* Max consecutive timeouts before rescan */
+#define FHSS_RX_TIMEOUT_MAX     3   /* Max consecutive timeouts before rescan */
 
 /* Sync packet format - sent by TX to synchronize RX LFSR (explicit header mode) */
 #define FHSS_SYNC_MARKER        0xAA
@@ -31,6 +31,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  marker;           /* Sync marker (0xAA) */
     uint16_t lfsr_state;       /* Current LFSR state for channel hopping */
     uint8_t  next_channel;     /* Next channel TX will hop to */
+    uint8_t  hop_count;        /* Number of hops since LFSR state - RX fast-forwards */
 } fhss_sync_pkt_t;
 
 #define FHSS_SYNC_PKT_SIZE      sizeof(fhss_sync_pkt_t)
@@ -112,6 +113,7 @@ typedef struct {
     uint32_t dwell_start_ms;      /* Timestamp when current channel dwell started */
     uint16_t pkts_on_channel;     /* Packets sent/received on current channel */
     uint8_t  rx_timeout_consec;   /* Consecutive RX timeouts (reset on RxDone) */
+    bool     rx_first_dwell;      /* RX: first dwell after sync (extended threshold) */
     uint8_t  preamble_confirm_count; /* Preamble confirmations during RX_SYNC */
     fhss_cad_config_t cad_cfg;    /* CAD configuration */
     fhss_state_t state;           /* Current state */

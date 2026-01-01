@@ -90,8 +90,9 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
 #ifdef ENABLE_HOPPING
     /* Check if this is an FHSS sync packet */
     if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
-        /* Reject sync packets with poor signal quality (likely noise/false detect) */
-        if (snr < 0.0f || rssi < -110.0f) {
+        /* Reject sync packets with poor signal quality (likely noise/false detect).
+         * SF7 can decode at SNR down to about -7.5dB, so use -8.0 as threshold. */
+        if (snr < -8.0f || rssi < -115.0f) {
             printf("FHSS: rejecting weak sync (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
             /* Resume scanning */
             fhss_start_scan();

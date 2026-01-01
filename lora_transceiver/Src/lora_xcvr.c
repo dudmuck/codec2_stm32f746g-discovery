@@ -1565,20 +1565,14 @@ skip_encode:
             extern volatile uint16_t rx_fifo_read_idx;
             extern volatile uint16_t rx_decode_idx;
 #ifdef ENABLE_HOPPING
-            /* In FHSS mode, timeout means TX hopped away. Hop to follow TX. */
+            /* In FHSS mode, timeout means TX hopped away. Use handler for proper tracking. */
             if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
-                uint8_t old_ch = fhss_cfg.current_channel;
-                uint8_t next_ch = fhss_random_channel();  /* Advance LFSR */
-                lorahal.standby();
-                fhss_set_channel(next_ch);
-                fhss_cfg.pkts_on_channel = 0;
-                /* Keep dwell_start_ms at 0 so timer starts when we receive a packet */
-                fhss_cfg.dwell_start_ms = 0;
-                lorahal.rx(0);  /* Restart RX on new channel */
-                printf("FHSS timeout hop: ch%u->ch%u\r\n", old_ch, next_ch);
+                fhss_rx_data_timeout_handler();  /* Handles hop and rescan logic */
                 /* After timeout hop, wait 80% of dwell period before timing out again.
                  * This keeps RX ahead of TX (which hops at 90% of dwell). */
-                terminate_spkr_at_tick = uwTick + (FHSS_MAX_DWELL_MS * 8 / 10);
+                if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+                    terminate_spkr_at_tick = uwTick + (FHSS_MAX_DWELL_MS * 8 / 10);
+                }
                 terminate_spkr_rx = 0;
             } else
 #endif

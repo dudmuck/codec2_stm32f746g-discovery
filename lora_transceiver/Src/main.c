@@ -448,8 +448,8 @@ int main(void)
         const char* str;
         switch (selected_bitrate) {
             case CODEC2_MODE_3200:
-                lora_payload_length = 24;   // 3 frames, TOA=52ms < prod=60ms
-                sf_at_500KHz = 9;
+                lora_payload_length = 48;   // 6 frames, TOA~50ms < prod=120ms
+                sf_at_500KHz = 9;           // Better for FHSS: fewer packets, easier defer
                 str = "3200";
                 break;
             case CODEC2_MODE_2400:

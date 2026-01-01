@@ -91,9 +91,15 @@ bool LR20xx_service()
                 LR20xx_txDone();
         }
 
+        /* Handle LORA_HEADER_ERROR - clear FIFO to prevent stale data */
+        if (irqFlags & LR20XX_SYSTEM_IRQ_LORA_HEADER_ERROR) {
+            lr20xx_radio_fifo_clear_rx(NULL);
+        }
+
         if (irqFlags & LR20XX_SYSTEM_IRQ_RX_DONE) {
             if (!(irqFlags & LR20XX_SYSTEM_IRQ_CRC_ERROR) &&
-                !(irqFlags & LR20XX_SYSTEM_IRQ_LEN_ERROR)) {
+                !(irqFlags & LR20XX_SYSTEM_IRQ_LEN_ERROR) &&
+                !(irqFlags & LR20XX_SYSTEM_IRQ_LORA_HEADER_ERROR)) {
                 uint16_t size;
                 ASSERT_LR20XX_RC( lr20xx_radio_common_get_rx_packet_length(NULL, &size) );
                 if (size <= LR20XX_BUF_SIZE) {
