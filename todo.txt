@@ -1,0 +1,10 @@
+1) call svc_uart() at while (c2 == NULL) loop main() in lora_transceiver/Src/main.c for the purpose of selected codec2 rate from UART, which would be selected by a character '0' for 3200, up to 'n' for 700C.   svc_uart() is in lora_xcvr.c
+2) add to svc_uart() a character to reset the MCU via nvic-reset.  This is to permit operating with a different codec2 rate.
+3) at AudioLoopback_demo() in the while(1) loop, the user button is read.  When user button is pressed, TX starts and TX ends when user button is released.  Add a character to svc_uart() to start TX and another to end TX.
+4) for the purpose of testing that encoded codec2 frames are correctly sent over radio link (and received), we want to add a test mode to transmit a sequence number instead of frames encoded by decmiated_encode(), then on receiver detect these frames with sequence number instead of decoded with codec2_decode(), the sequence number received would be tracked to detect dropped frames or duplicate frames.
+5) create a shell script to run this sequence test on all codec2 rates.  and save log files of failed test. The two boards are available on /dev/ttyACM1 and /dev/ttyACM0 at 115200bps, this way we can confirm the radio link operates correctly, and after any future changes to the software.
+
+6) upon startup, print streaming timing analysis, and then print SF feasibility analysis
+streaming timing analysis (and SF feasibility analysis) example is in file _print_timing.c and it could go into lr20xx_hal/radio_lr20xx.c but modified to run here.  This would likely be called in main() just before AudioLoopback_demo() is called.
+
+

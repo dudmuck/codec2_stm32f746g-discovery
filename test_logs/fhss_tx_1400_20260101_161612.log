@@ -1,0 +1,144 @@
+rxchar 'R'
+Resetting MCU...
+rxchar '3'
+UART selected rate: 1400
+Init_lr20xx
+radio reset
+radio reset ok
+LR20xx v1.24
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:320, _bytes_per_frame:7, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:7 bytes
+Codec2 frame period: 40 ms
+Packet: 49 bytes = 7 frames
+Packet time-on-air: 309 ms
+Codec2 production time for packet: 280 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 32 ms - OK (margin 248 ms)
+SF6: 55 ms - OK (margin 225 ms)
+SF7: 93 ms - OK (margin 187 ms)
+SF8: 175 ms - OK (margin 105 ms)
+SF9: 309 ms - TOO SLOW (exceeds by 29 ms)
+SF10: 576 ms - TOO SLOW (exceeds by 296 ms)
+SF11: 1233 ms - TOO SLOW (exceeds by 953 ms)
+SF12: 2302 ms - TOO SLOW (exceeds by 2022 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=309ms margin=-29ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=175ms, margin=105ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (pkt_toa=175 ms)
+Streaming config: feasible=0, min_init=7 frames, rec_sf=8, margin=105 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=49 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+sweep 1: 960 ms, mode=RX
+False CAD on ch28 (noise)
+sweep 2: 342 ms, mode=RX
+sweep 3: 279 ms, mode=RX
+sweep 4: 266 ms, mode=RX
+rxchar 'T'
+Test mode ON
+sweep 5: 313 ms, mode=RX
+sweep 6: 303 ms, mode=RX
+sweep 7: 298 ms, mode=RX
+False CAD on ch4 (noise)
+sweep 8: 358 ms, mode=RX
+False CAD on ch4 (noise)
+sweep 9: 351 ms, mode=RX
+sweep 10: 294 ms, mode=RX
+sweep 11: 303 ms, mode=RX
+sweep 12: 282 ms, mode=RX
+sweep 13: 287 ms, mode=RX
+sweep 14: 303 ms, mode=RX
+sweep 15: 317 ms, mode=RX
+sweep 16: 307 ms, mode=RX
+sweep 17: 325 ms, mode=RX
+sweep 18: 307 ms, mode=RX
+sweep 19: 303 ms, mode=RX
+sweep 20: 303 ms, mode=RX
+False CAD on ch22 (noise)
+sweep 21: 336 ms, mode=RX
+sweep 22: 297 ms, mode=RX
+rxchar 't'
+TX start
+FHSS: stopping scan for TX
+keyup
+TX sync on ch7 (905.840 MHz), lfsr=0x5593, next_ch=21, hops=0, preamble=171
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sending sync packet
+FHSS: sync repeat 2/3 on ch5, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sync repeat 3/3 on ch22, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sync TX done, hop ch22->ch21, ready for data
+PktCfg: pre=8 implicit crc=ON len=52
+FHSS data mode: pkt_len=52 (payload=49 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS: data mode configured, payload=49
+fhss_hop: lfsr 0xAAC9->0x5564, ch 10 (loops=1, hops=1)
+FHSS: defer pkt, hop ch21->ch10 after 561ms
+fhss_hop: lfsr 0x5564->0x2AB2, ch 30 (loops=1, hops=2)
+FHSS: defer pkt, hop ch10->ch30 after 561ms
+fhss_hop: lfsr 0x2AB2->0x9559, ch 33 (loops=1, hops=3 RESYNC)
+FHSS: defer pkt, hop ch30->ch33 after 561ms
+fhss_hop: lfsr 0x9559->0x4AAC, ch 16 (loops=1, hops=4)
+FHSS: defer pkt, hop ch33->ch16 after 555ms
+fhss_hop: lfsr 0x4AAC->0xA556, ch 26 (loops=1, hops=5)
+FHSS: defer pkt, hop ch16->ch26 after 561ms
+fhss_hop: lfsr 0xA556->0xD2AB, ch 31 (loops=1, hops=6 RESYNC)
+FHSS: defer pkt, hop ch26->ch31 after 561ms
+fhss_hop: lfsr 0xD2AB->0xE955, ch 33 (loops=1, hops=7)
+FHSS: defer pkt, hop ch31->ch33 after 562ms
+fhss_hop: lfsr 0xE955->0x74AA, ch 16 (loops=1, hops=8)
+FHSS: defer pkt, hop ch33->ch16 after 561ms
+fhss_hop: lfsr 0x74AA->0x3A55, ch 33 (loops=1, hops=9 RESYNC)
+FHSS: defer pkt, hop ch16->ch33 after 561ms
+fhss_hop: lfsr 0x3A55->0x1D2A, ch 16 (loops=1, hops=10)
+FHSS: defer pkt, hop ch33->ch16 after 555ms
+fhss_hop: lfsr 0x1D2A->0x0E95, ch 33 (loops=1, hops=11)
+FHSS: defer pkt, hop ch16->ch33 after 561ms
+fhss_hop: lfsr 0x0E95->0x074A, ch 16 (loops=1, hops=12 RESYNC)
+FHSS: defer pkt, hop ch33->ch16 after 561ms
+fhss_hop: lfsr 0x074A->0x83A5, ch 1 (loops=1, hops=13)
+FHSS: defer pkt, hop ch16->ch1 after 561ms
+fhss_hop: lfsr 0x83A5->0xC1D2, ch 18 (loops=1, hops=14)
+FHSS: defer pkt, hop ch1->ch18 after 561ms
+fhss_hop: lfsr 0xC1D2->0x60E9, ch 9 (loops=1, hops=15 RESYNC)
+FHSS: defer pkt, hop ch18->ch9 after 561ms
+fhss_hop: lfsr 0x60E9->0xB074, ch 22 (loops=1, hops=16)
+FHSS: defer pkt, hop ch9->ch22 after 555ms
+fhss_hop: lfsr 0xB074->0x583A, ch 36 (loops=1, hops=17)
+FHSS: defer pkt, hop ch22->ch36 after 562ms
+fhss_hop: lfsr 0x583A->0x2C1D, ch 43 (loops=1, hops=18 RESYNC)
+FHSS: defer pkt, hop ch36->ch43 after 561ms
+fhss_hop: lfsr 0x2C1D->0x960E, ch 14 (loops=1, hops=19)
+FHSS: defer pkt, hop ch43->ch14 after 561ms
+fhss_hop: lfsr 0x960E->0x4B07, ch 7 (loops=1, hops=20)
+FHSS: defer pkt, hop ch14->ch7 after 561ms
+fhss_hop: lfsr 0x4B07->0x2583, ch 3 (loops=1, hops=21 RESYNC)
+FHSS: defer pkt, hop ch7->ch3 after 561ms
+fhss_hop: lfsr 0x2583->0x92C1, ch 19 (loops=1, hops=22)
+FHSS: defer pkt, hop ch3->ch19 after 555ms
+fhss_hop: lfsr 0x92C1->0xC960, ch 2 (loops=1, hops=23)
+FHSS: defer pkt, hop ch19->ch2 after 561ms
+fhss_hop: lfsr 0xC960->0xE4B0, ch 44 (loops=1, hops=24 RESYNC)
+FHSS: defer pkt, hop ch2->ch44 after 561ms
+rxchar 'r'
+TX end
+unkey idx:14 cb:374 enc:345 tm:345 ne:345 pk:49
+FHSS: TX stopped (data_cnt=49)

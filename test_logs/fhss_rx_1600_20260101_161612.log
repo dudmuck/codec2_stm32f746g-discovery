@@ -1,0 +1,191 @@
+sweep 15: 157 ms, mode=RX
+sweep 16: 148 ms, mode=RX
+rxchar 'R'
+Resetting MCU...
+rxchar '2'
+UART selected rate: 1600
+Init_lr20xx
+radio reset
+radio reset ok
+LR20xx v1.24
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:320, _bytes_per_frame:8, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:8 bytes
+Codec2 frame period: 40 ms
+Packet: 72 bytes = 9 frames
+Packet time-on-air: 411 ms
+Codec2 production time for packet: 360 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 43 ms - OK (margin 317 ms)
+SF6: 73 ms - OK (margin 287 ms)
+SF7: 129 ms - OK (margin 231 ms)
+SF8: 226 ms - OK (margin 134 ms)
+SF9: 411 ms - TOO SLOW (exceeds by 51 ms)
+SF10: 781 ms - TOO SLOW (exceeds by 421 ms)
+SF11: 1643 ms - TOO SLOW (exceeds by 1283 ms)
+SF12: 2958 ms - TOO SLOW (exceeds by 2598 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=411ms margin=-51ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=226ms, margin=134ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (pkt_toa=226 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=8, margin=134 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=72 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+False CAD on ch1 (noise)
+sweep 1: 1016 ms, mode=RX
+False CAD on ch41 (noise)
+sweep 2: 348 ms, mode=RX
+rxchar 'T'
+Test mode ON
+sweep 3: 311 ms, mode=RX
+False CAD on ch32 (noise)
+sweep 4: 361 ms, mode=RX
+False CAD on ch26 (noise)
+sweep 5: 326 ms, mode=RX
+sweep 6: 299 ms, mode=RX
+sweep 7: 307 ms, mode=RX
+False CAD on ch38 (noise)
+sweep 8: 351 ms, mode=RX
+sweep 9: 294 ms, mode=RX
+False CAD on ch3 (noise)
+sweep 10: 367 ms, mode=RX
+sweep 11: 309 ms, mode=RX
+False CAD on ch46 (noise)
+sweep 12: 363 ms, mode=RX
+False CAD on ch18 (noise)
+sweep 13: 344 ms, mode=RX
+False CAD on ch8 (noise)
+sweep 14: 349 ms, mode=RX
+sweep 15: 280 ms, mode=RX
+sweep 16: 299 ms, mode=RX
+sweep 17: 278 ms, mode=RX
+False CAD on ch47 (noise)
+sweep 18: 351 ms, mode=RX
+sweep 19: 295 ms, mode=RX
+sweep 20: 321 ms, mode=RX
+FHSS sync: lfsr=0x5593, next_ch=21, hop_count=0
+PktCfg: pre=8 implicit crc=ON len=75
+FHSS data mode: pkt_len=75 (payload=72 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS synchronized (rssi=-32.0, snr=15.8)
+fhss_hop: lfsr 0xAAC9->0x5564, ch 10 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch21->ch10
+fhss_hop: lfsr 0x5564->0x2AB2, ch 30 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch10->ch30
+FHSS: 3 consecutive timeouts, returning to CAD scan
+RX stats: rx=3 crc_err=1 hdr_err=0 false_sync=1
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+False CAD on ch10 (noise)
+False CAD on ch17 (noise)
+False CAD on ch32 (noise)
+sweep 1: 469 ms, mode=RX
+False CAD on ch12 (noise)
+Short preamble on ch21 (1 confirms) - data channel?
+sweep 2: 511 ms, mode=RX
+False CAD on ch8 (noise)
+False CAD on ch10 (noise)
+sweep 3: 407 ms, mode=RX
+False CAD on ch3 (noise)
+Short preamble on ch10 (1 confirms) - data channel?
+False CAD on ch21 (noise)
+False CAD on ch32 (noise)
+sweep 4: 608 ms, mode=RX
+False CAD on ch10 (noise)
+False CAD on ch21 (noise)
+False CAD on ch30 (noise)
+sweep 5: 463 ms, mode=RX
+False CAD on ch10 (noise)
+sweep 6: 324 ms, mode=RX
+Short preamble on ch10 (1 confirms) - data channel?
+False CAD on ch32 (noise)
+sweep 7: 517 ms, mode=RX
+False CAD on ch32 (noise)
+sweep 8: 373 ms, mode=RX
+Short preamble on ch32 (1 confirms) - data channel?
+sweep 9: 413 ms, mode=RX
+False CAD on ch32 (noise)
+sweep 10: 352 ms, mode=RX
+False CAD on ch32 (noise)
+sweep 11: 347 ms, mode=RX
+False CAD on ch32 (noise)
+sweep 12: 342 ms, mode=RX
+False CAD on ch10 (noise)
+False CAD on ch21 (noise)
+False CAD on ch32 (noise)
+sweep 13: 473 ms, mode=RX
+Short preamble on ch10 (1 confirms) - data channel?
+False CAD on ch16 (noise)
+sweep 14: 493 ms, mode=RX
+False CAD on ch4 (noise)
+Short preamble on ch10 (1 confirms) - data channel?
+Short preamble on ch21 (2 confirms) - data channel?
+False CAD on ch24 (noise)
+False CAD on ch32 (noise)
+sweep 15: 643 ms, mode=RX
+False CAD on ch10 (noise)
+False CAD on ch21 (noise)
+False CAD on ch49 (noise)
+sweep 16: 462 ms, mode=FS
+False CAD on ch10 (noise)
+sweep 17: 349 ms, mode=RX
+False CAD on ch10 (noise)
+sweep 18: 359 ms, mode=RX
+False CAD on ch10 (noise)
+sweep 19: 365 ms, mode=RX
+Short preamble on ch10 (1 confirms) - data channel?
+Short preamble on ch21 (1 confirms) - data channel?
+False CAD on ch32 (noise)
+sweep 20: 630 ms, mode=RX
+Short preamble on ch10 (2 confirms) - data channel?
+sweep 21: 428 ms, mode=RX
+False CAD on ch9 (noise)
+Short preamble on ch10 (1 confirms) - data channel?
+False CAD on ch21 (noise)
+False CAD on ch32 (noise)
+sweep 22: 606 ms, mode=RX
+False CAD on ch10 (noise)
+False CAD on ch21 (noise)
+sweep 23: 429 ms, mode=RX
+False CAD on ch10 (noise)
+False CAD on ch21 (noise)
+sweep 24: 411 ms, mode=RX
+False CAD on ch10 (noise)
+sweep 25: 357 ms, mode=RX
+False CAD on ch10 (noise)
+sweep 26: 369 ms, mode=RX
+False CAD on ch10 (noise)
+False CAD on ch48 (noise)
+sweep 27: 400 ms, mode=RX
+Short preamble on ch10 (1 confirms) - data channel?
+sweep 28: 462 ms, mode=RX
+sweep 29: 303 ms, mode=RX
+False CAD on ch36 (noise)
+sweep 30: 381 ms, mode=RX
+sweep 31: 299 ms, mode=RX
+sweep 32: 309 ms, mode=RX
+sweep 33: 309 ms, mode=RX
+sweep 34: 262 ms, mode=RX
+False CAD on ch49 (noise)
+sweep 35: 348 ms, mode=RX
+sweep 36: 297 ms, mode=RX

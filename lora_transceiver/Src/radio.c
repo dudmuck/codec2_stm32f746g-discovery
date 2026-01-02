@@ -27,6 +27,8 @@ void radio_irq_callback()
 
 void txDoneCB()
 {
+    extern uint32_t HAL_GetTick(void);
+    printf("txDone t=%lu\r\n", HAL_GetTick());
     txing = 0;
     appHal.lcd_printOpMode(false);
     lcd_print_tx_duration((int)(tickAtIrq - txStartAt), (unsigned)cycleDur);

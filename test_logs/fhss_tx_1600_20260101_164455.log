@@ -1,0 +1,99 @@
+rxchar 'R'
+Select codec2 rate:
+  0: 3200  1: 2400  2: 1600
+  3: 1400  4: 1300  5: 1200
+  8: 700C
+rxchar '2'
+UART selected rate: 1600
+Init_lr20xx
+radio reset
+radio reset ok
+LR20xx v1.24
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:320, _bytes_per_frame:8, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:8 bytes
+Codec2 frame period: 40 ms
+Packet: 72 bytes = 9 frames
+Packet time-on-air: 411 ms
+Codec2 production time for packet: 360 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 43 ms - OK (margin 317 ms)
+SF6: 73 ms - OK (margin 287 ms)
+SF7: 129 ms - OK (margin 231 ms)
+SF8: 226 ms - OK (margin 134 ms)
+SF9: 411 ms - TOO SLOW (exceeds by 51 ms)
+SF10: 781 ms - TOO SLOW (exceeds by 421 ms)
+SF11: 1643 ms - TOO SLOW (exceeds by 1283 ms)
+SF12: 2958 ms - TOO SLOW (exceeds by 2598 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=411ms margin=-51ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=226ms, margin=134ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=226 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=8, margin=134 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=72 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+sweep 1: 939 ms, mode=RX
+sweep 2: 276 ms, mode=RX
+False CAD on ch17 (noise)
+sweep 3: 352 ms, mode=RX
+sweep 4: 311 ms, mode=RX
+rxchar 'T'
+Test mode ON
+sweep 5: 296 ms, mode=RX
+sweep 6: 311 ms, mode=RX
+sweep 7: 301 ms, mode=RX
+False CAD on ch3 (noise)
+sweep 8: 351 ms, mode=RX
+sweep 9: 295 ms, mode=RX
+sweep 10: 282 ms, mode=RX
+sweep 11: 316 ms, mode=RX
+sweep 12: 305 ms, mode=RX
+sweep 13: 296 ms, mode=RX
+sweep 14: 285 ms, mode=RX
+sweep 15: 266 ms, mode=RX
+sweep 16: 299 ms, mode=RX
+False CAD on ch26 (noise)
+sweep 17: 342 ms, mode=RX
+sweep 18: 273 ms, mode=RX
+sweep 19: 304 ms, mode=RX
+sweep 20: 283 ms, mode=RX
+sweep 21: 299 ms, mode=RX
+sweep 22: 303 ms, mode=RX
+rxchar 't'
+TX start
+FHSS: stopping scan for TX
+keyup
+TX sync on ch25 (915.200 MHz), lfsr=0x117B, next_ch=5, hops=0, preamble=171
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sending sync packet
+FHSS: sync repeat 2/3 on ch39, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sync repeat 3/3 on ch6, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sync TX done, hop ch6->ch5, ready for data
+PktCfg: pre=8 implicit crc=ON len=75
+FHSS data mode: pkt_len=75 (payload=72 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS: data mode configured, payload=72
+fhss_hop: lfsr 0x88BD->0x445E, ch 2 (loops=1, hops=1)
+FHSS: defer pkt, hop ch5->ch2 after 363ms
+rxchar 'r'
+TX end
+unkey idx:32 cb:250 enc:220 tm:220 ne:220 pk:2

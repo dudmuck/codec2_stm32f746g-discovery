@@ -112,7 +112,9 @@ typedef struct {
     uint8_t  rx_seq_num;          /* Expected RX sequence number */
     uint32_t dwell_start_ms;      /* Timestamp when current channel dwell started */
     uint16_t pkts_on_channel;     /* Packets sent/received on current channel */
+    uint8_t  proactive_hop_count; /* Packets per channel before proactive hop (calc from TOA) */
     uint8_t  rx_timeout_consec;   /* Consecutive RX timeouts (reset on RxDone) */
+    uint32_t rx_sync_achieved_ms; /* Timestamp when sync was achieved (for initial wait) */
     bool     rx_first_dwell;      /* RX: first dwell after sync (extended threshold) */
     uint8_t  preamble_confirm_count; /* Preamble confirmations during RX_SYNC */
     fhss_cad_config_t cad_cfg;    /* CAD configuration */
@@ -125,6 +127,9 @@ extern fhss_config_t fhss_cfg;
 
 /* Initialize FHSS module */
 void fhss_init(void);
+
+/* Set proactive hop count based on codec2 production time and packet TOA */
+void fhss_set_proactive_hop_count(uint32_t production_time_ms, uint32_t pkt_toa_ms);
 
 /* Get frequency in Hz for a given channel index (0-49) */
 uint32_t fhss_get_channel_freq(uint8_t channel);

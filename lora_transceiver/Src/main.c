@@ -99,17 +99,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
     uartReceived = 1;
 }
 
-volatile unsigned Cnt;
-/*extern volatile uint8_t uartTXing;
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *UartHandle)
-{
-    Cnt = UartHandle->hdmatx->Instance->NDTR;
-    if (Cnt == 0) {
-        uartTXing = 0;
-    } else {
-        for (;;) asm("nop");
-    }
-}*/
+/* HAL_UART_TxCpltCallback() implemented in syscalls.c for interrupt-mode TX */
 
 void rate_choice_SetHint()
 {
@@ -326,7 +316,8 @@ int main(void)
     BSP_COM_Init(COM1, &UartHandle);
 
     HAL_UART_Receive_IT(&UartHandle, &rxchar, 1);
-    HAL_NVIC_SetPriority(DISCOVERY_COM1_IRQn, 0, 1);
+    /* Priority 10 = lower than audio (5) so UART TX doesn't starve encoder callbacks */
+    HAL_NVIC_SetPriority(DISCOVERY_COM1_IRQn, 10, 0);
     HAL_NVIC_EnableIRQ(DISCOVERY_COM1_IRQn);
 
     BSP_LED_Init(LED1);

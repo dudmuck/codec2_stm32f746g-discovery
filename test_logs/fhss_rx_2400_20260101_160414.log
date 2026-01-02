@@ -1,0 +1,225 @@
+rxchar 'R'
+Select codec2 rate:
+  0: 3200  1: 2400  2: 1600
+  3: 1400  4: 1300  5: 1200
+  8: 700C
+rxchar '1'
+UART selected rate: 2400
+Init_lr20xx
+radio reset
+radio reset ok
+LR20xx v1.24
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:160, _bytes_per_frame:6, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:8 BW:125kHz frame_size:6 bytes
+Codec2 frame period: 20 ms
+Packet: 36 bytes = 6 frames
+Packet time-on-air: 134 ms
+Codec2 production time for packet: 120 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 25 ms - OK (margin 95 ms)
+SF6: 43 ms - OK (margin 77 ms)
+SF7: 78 ms - OK (margin 42 ms)
+SF8: 134 ms - TOO SLOW (exceeds by 14 ms)
+SF9: 247 ms - TOO SLOW (exceeds by 127 ms)
+SF10: 453 ms - TOO SLOW (exceeds by 333 ms)
+SF11: 988 ms - TOO SLOW (exceeds by 868 ms)
+SF12: 1811 ms - TOO SLOW (exceeds by 1691 ms)
+
+Maximum usable SF: 7 (current: 8)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF8 TOA=134ms margin=-14ms (min=10), reducing SF...
+Adjusted SF8->SF7 (TOA=78ms, margin=42ms)
+NOTE: TX faster than encoding, buffering full packet
+Streaming config: feasible=0, min_init=6 frames, rec_sf=7, margin=42 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=36 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=51, pnr_delta=8, timeout=20 ms (SF7 BW125kHz)
+Sync preamble: 342 symbols (350 ms)
+PktCfg: pre=342 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+sweep 1: 827 ms, mode=RX
+sweep 2: 152 ms, mode=RX
+sweep 3: 157 ms, mode=RX
+False CAD on ch15 (noise)
+sweep 4: 208 ms, mode=RX
+rxchar 'T'
+Test mode ON
+sweep 5: 153 ms, mode=RX
+sweep 6: 145 ms, mode=RX
+sweep 7: 150 ms, mode=RX
+sweep 8: 148 ms, mode=RX
+sweep 9: 154 ms, mode=RX
+sweep 10: 158 ms, mode=RX
+sweep 11: 157 ms, mode=RX
+sweep 12: 158 ms, mode=RX
+False CAD on ch15 (noise)
+sweep 13: 206 ms, mode=RX
+sweep 14: 148 ms, mode=RX
+sweep 15: 144 ms, mode=RX
+sweep 16: 153 ms, mode=RX
+sweep 17: 149 ms, mode=RX
+sweep 18: 148 ms, mode=RX
+sweep 19: 145 ms, mode=RX
+sweep 20: 152 ms, mode=RX
+sweep 21: 162 ms, mode=RX
+sweep 22: 154 ms, mode=RX
+sweep 23: 156 ms, mode=RX
+sweep 24: 159 ms, mode=RX
+sweep 25: 147 ms, mode=RX
+sweep 26: 140 ms, mode=RX
+sweep 27: 149 ms, mode=RX
+sweep 28: 156 ms, mode=RX
+sweep 29: 152 ms, mode=RX
+sweep 30: 154 ms, mode=RX
+sweep 31: 157 ms, mode=RX
+sweep 32: 152 ms, mode=RX
+sweep 33: 145 ms, mode=RX
+sweep 34: 148 ms, mode=RX
+sweep 35: 148 ms, mode=RX
+sweep 36: 148 ms, mode=RX
+sweep 37: 154 ms, mode=RX
+sweep 38: 159 ms, mode=RX
+sweep 39: 154 ms, mode=RX
+sweep 40: 153 ms, mode=RX
+FHSS sync: lfsr=0x7FAE, next_ch=11, hop_count=0
+PktCfg: pre=8 implicit crc=ON len=39
+FHSS data mode: pkt_len=39 (payload=36 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS synchronized (rssi=-36.0, snr=14.2)
+fhss_hop: lfsr 0xBFD7->0x5FEB, ch 5 (loops=1, hops=0)
+FHSS: proactive hop ch11->ch5 (3 pkts)
+fhss_hop: lfsr 0x5FEB->0xAFF5, ch 45 (loops=1, hops=0)
+FHSS: proactive hop ch5->ch45 (3 pkts)
+fhss_hop: lfsr 0xAFF5->0xD7FA, ch 40 (loops=1, hops=0)
+FHSS: proactive hop ch45->ch40 (3 pkts)
+40824ms for 50 frames OK
+40840ms for 50 frames
+fhss_hop: lfsr 0xD7FA->0x6BFD, ch 45 (loops=1, hops=0)
+FHSS: proactive hop ch40->ch45 (3 pkts)
+fhss_hop: lfsr 0x6BFD->0x35FE, ch 22 (loops=1, hops=0)
+FHSS: proactive hop ch45->ch22 (3 pkts)
+996ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0x35FE->0x9AFF, ch 29 (loops=1, hops=0)
+FHSS: proactive hop ch22->ch29 (3 pkts)
+fhss_hop: lfsr 0x9AFF->0x4D7F, ch 39 (loops=1, hops=0)
+FHSS: proactive hop ch29->ch39 (3 pkts)
+fhss_hop: lfsr 0x4D7F->0x26BF, ch 19 (loops=1, hops=0)
+FHSS: proactive hop ch39->ch19 (3 pkts)
+1000ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0x26BF->0x135F, ch 9 (loops=1, hops=0)
+FHSS: proactive hop ch19->ch9 (3 pkts)
+fhss_hop: lfsr 0x135F->0x89AF, ch 47 (loops=1, hops=0)
+FHSS: proactive hop ch9->ch47 (3 pkts)
+fhss_hop: lfsr 0x89AF->0x44D7, ch 23 (loops=1, hops=0)
+FHSS: proactive hop ch47->ch23 (3 pkts)
+1004ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0x44D7->0x226B, ch 11 (loops=1, hops=0)
+FHSS: proactive hop ch23->ch11 (3 pkts)
+fhss_hop: lfsr 0x226B->0x9135, ch 23 (loops=1, hops=0)
+FHSS: proactive hop ch11->ch23 (3 pkts)
+fhss_hop: lfsr 0x9135->0xC89A, ch 4 (loops=1, hops=0)
+FHSS: proactive hop ch23->ch4 (3 pkts)
+996ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0xC89A->0xE44D, ch 45 (loops=1, hops=0)
+FHSS: proactive hop ch4->ch45 (3 pkts)
+fhss_hop: lfsr 0xE44D->0xF226, ch 40 (loops=1, hops=0)
+FHSS: proactive hop ch45->ch40 (3 pkts)
+1001ms for 50 frames OK
+1001ms for 50 frames
+fhss_hop: lfsr 0xF226->0x7913, ch 45 (loops=1, hops=0)
+FHSS: proactive hop ch40->ch45 (3 pkts)
+fhss_hop: lfsr 0x7913->0xBC89, ch 15 (loops=1, hops=0)
+FHSS: proactive hop ch45->ch15 (3 pkts)
+fhss_hop: lfsr 0xBC89->0x5E44, ch 32 (loops=1, hops=0)
+FHSS: proactive hop ch15->ch32 (3 pkts)
+1004ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0x5E44->0xAF22, ch 34 (loops=1, hops=0)
+FHSS: proactive hop ch32->ch34 (3 pkts)
+fhss_hop: lfsr 0xAF22->0xD791, ch 35 (loops=1, hops=0)
+FHSS: proactive hop ch34->ch35 (3 pkts)
+fhss_hop: lfsr 0xD791->0xEBC8, ch 10 (loops=1, hops=0)
+FHSS: proactive hop ch35->ch10 (3 pkts)
+996ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0xEBC8->0xF5E4, ch 48 (loops=1, hops=0)
+FHSS: proactive hop ch10->ch48 (3 pkts)
+fhss_hop: lfsr 0xF5E4->0x7AF2, ch 24 (loops=1, hops=0)
+FHSS: proactive hop ch48->ch24 (3 pkts)
+fhss_hop: lfsr 0x7AF2->0xBD79, ch 5 (loops=1, hops=0)
+FHSS: proactive hop ch24->ch5 (3 pkts)
+1000ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0xBD79->0xDEBC, ch 20 (loops=1, hops=0)
+FHSS: proactive hop ch5->ch20 (3 pkts)
+fhss_hop: lfsr 0xDEBC->0xEF5E, ch 28 (loops=1, hops=0)
+FHSS: proactive hop ch20->ch28 (3 pkts)
+fhss_hop: lfsr 0xEF5E->0x77AF, ch 39 (loops=1, hops=0)
+FHSS: proactive hop ch28->ch39 (3 pkts)
+1004ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0x77AF->0x3BD7, ch 19 (loops=1, hops=0)
+FHSS: proactive hop ch39->ch19 (3 pkts)
+fhss_hop: lfsr 0x3BD7->0x1DEB, ch 9 (loops=1, hops=0)
+FHSS: proactive hop ch19->ch9 (3 pkts)
+996ms for 50 frames OK
+1001ms for 50 frames
+fhss_hop: lfsr 0x1DEB->0x8EF5, ch 47 (loops=1, hops=0)
+FHSS: proactive hop ch9->ch47 (3 pkts)
+fhss_hop: lfsr 0x8EF5->0xC77A, ch 16 (loops=1, hops=0)
+FHSS: proactive hop ch47->ch16 (3 pkts)
+fhss_hop: lfsr 0xC77A->0x63BD, ch 33 (loops=1, hops=0)
+FHSS: proactive hop ch16->ch33 (3 pkts)
+1000ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0x63BD->0x31DE, ch 16 (loops=1, hops=0)
+FHSS: proactive hop ch33->ch16 (3 pkts)
+fhss_hop: lfsr 0x31DE->0x18EF, ch 33 (loops=1, hops=0)
+FHSS: proactive hop ch16->ch33 (3 pkts)
+fhss_hop: lfsr 0x18EF->0x0C77, ch 41 (loops=1, hops=0)
+FHSS: proactive hop ch33->ch41 (3 pkts)
+1004ms for 50 frames OK
+1000ms for 50 frames
+fhss_hop: lfsr 0x0C77->0x863B, ch 13 (loops=1, hops=0)
+FHSS: proactive hop ch41->ch13 (3 pkts)
+fhss_hop: lfsr 0x863B->0xC31D, ch 49 (loops=1, hops=0)
+FHSS: proactive hop ch13->ch49 (3 pkts)
+fhss_hop: lfsr 0xC31D->0xE18E, ch 42 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch49->ch42
+fhss_hop: lfsr 0xE18E->0x70C7, ch 21 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch42->ch21
+FHSS: 3 consecutive timeouts, returning to CAD scan
+RX stats: rx=117 crc_err=1 hdr_err=0 false_sync=1
+FHSS scan starting...
+CAD configured: symb=4, peak=51, pnr_delta=8, timeout=20 ms (SF7 BW125kHz)
+Sync preamble: 342 symbols (350 ms)
+PktCfg: pre=342 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+sweep 1: 152 ms, mode=RX
+sweep 2: 150 ms, mode=RX
+False CAD on ch9 (noise)
+sweep 3: 213 ms, mode=RX
+False CAD on ch43 (noise)
+sweep 4: 209 ms, mode=RX
+sweep 5: 157 ms, mode=RX
+sweep 6: 160 ms, mode=RX
+sweep 7: 152 ms, mode=RX
+sweep 8: 148 ms, mode=RX
+sweep 9: 153 ms, mode=RX
+sweep 10: 156 ms, mode=RX
+sweep 11: 149 ms, mode=RX

@@ -1,0 +1,331 @@
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:8 bytes
+Codec2 frame period: 40 ms
+Packet: 72 bytes = 9 frames
+Packet time-on-air: 411 ms
+Codec2 production time for packet: 360 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 43 ms - OK (margin 317 ms)
+SF6: 73 ms - OK (margin 287 ms)
+SF7: 129 ms - OK (margin 231 ms)
+SF8: 226 ms - OK (margin 134 ms)
+SF9: 411 ms - TOO SLOW (exceeds by 51 ms)
+SF10: 781 ms - TOO SLOW (exceeds by 421 ms)
+SF11: 1643 ms - TOO SLOW (exceeds by 1283 ms)
+SF12: 2958 ms - TOO SLOW (exceeds by 2598 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=411ms margin=-51ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=226ms, margin=134ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=226 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=8, margin=134 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=72 bytes
+FHSS scan starting...
+CAD configured: symb=sweep 10: 316 ms, mode=RX
+rxchar 't'
+TX start
+FHSS: stopping scan for TX
+keyup
+TX sync on ch42 (924.040 MHz), lfsr=0x4BF2, next_ch=39, hops=0, preamble=171
+PktCfg: pre=171 explicit crc=ON len=5
+Send_lr20xx(5) start
+Send_lr20xx: size=5 chipMode=5 DIO8=0 BUSY=1
+FHSS: sending sync packet
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=609306 state=0
+txDone t=609306
+FHSS: sync repeat 2/3 on ch23, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+Send_lr20xx(5) start
+Send_lr20xx: size=5 chipMode=5 DIO8=0 BUSY=1
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=609708 state=0
+txDone t=609708
+FHSS: sync repeat 3/3 on ch40, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+Send_lr20xx(5) start
+Send_lr20xx: size=5 chipMode=5 DIO8=0 BUSY=1
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=610109 state=0
+txDone t=610109
+FHSS: sync TX done, hop ch40->ch39, ready for data, dwell_ms=0
+PktCfg: pre=8 implicit crc=ON len=75
+FHSS data mode: pkt_len=75 (payload=72 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS: data mode configured, payload=72
+FHSS pkt#1
+FHSS: first pkt, setting dwell_start=610436
+FHSS: TX data seq=0 ch=39 len=75
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=610674 state=1
+txDone t=610674
+FHSS pkt#2
+FHSS: pkt, dwell_start=610436, now=610795, elapsed=359
+fhss_hop: lfsr 0xA5F9->0xD2FC, ch 12 (loops=1, hops=1)
+FHSS: set ch12 = 908.440 MHz
+FHSS: defer pkt, hop ch39->ch12 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=611033 state=1
+txDone t=611033
+FHSS pkt#3
+FHSS: pkt, dwell_start=610795, now=611154, elapsed=359
+fhss_hop: lfsr 0xD2FC->0xE97E, ch 24 (loops=1, hops=2)
+FHSS: set ch24 = 914.680 MHz
+FHSS: defer pkt, hop ch12->ch24 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=611392 state=1
+txDone t=611392
+FHSS pkt#4
+FHSS: pkt, dwell_start=611154, now=611513, elapsed=359
+fhss_hop: lfsr 0xE97E->0xF4BF, ch 5 (loops=1, hops=3 RESYNC)
+FHSS: set ch5 = 904.800 MHz
+FHSS: defer pkt, hop ch24->ch5 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=611751 state=1
+txDone t=611751
+FHSS pkt#5
+FHSS: pkt, dwell_start=611513, now=611877, elapsed=364
+fhss_hop: lfsr 0xF4BF->0x7A5F, ch 27 (loops=1, hops=4)
+FHSS: set ch27 = 916.240 MHz
+FHSS: defer pkt, hop ch5->ch27 after 364ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=612116 state=1
+txDone t=612116
+FHSS pkt#6
+FHSS: pkt, dwell_start=611877, now=612236, elapsed=359
+fhss_hop: lfsr 0x7A5F->0xBD2F, ch 31 (loops=1, hops=5)
+FHSS: set ch31 = 918.320 MHz
+FHSS: defer pkt, hop ch27->ch31 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=612475 state=1
+txDone t=612475
+FHSS pkt#7
+FHSS: pkt, dwell_start=612236, now=612595, elapsed=359
+fhss_hop: lfsr 0xBD2F->0x5E97, ch 15 (loops=1, hops=6 RESYNC)
+FHSS: set ch15 = 910.000 MHz
+FHSS: defer pkt, hop ch31->ch15 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=612833 state=1
+txDone t=612833
+FHSS pkt#8
+FHSS: pkt, dwell_start=612595, now=612954, elapsed=359
+fhss_hop: lfsr 0x5E97->0x2F4B, ch 7 (loops=1, hops=7)
+FHSS: set ch7 = 905.840 MHz
+FHSS: defer pkt, hop ch15->ch7 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=613192 state=1
+txDone t=613192
+FHSS pkt#9
+FHSS: pkt, dwell_start=612954, now=613313, elapsed=359
+fhss_hop: lfsr 0x2F4B->0x17A5, ch 3 (loops=1, hops=8)
+FHSS: set ch3 = 903.760 MHz
+FHSS: defer pkt, hop ch7->ch3 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=613551 state=1
+txDone t=613551
+FHSS pkt#10
+FHSS: pkt, dwell_start=613313, now=613678, elapsed=365
+fhss_hop: lfsr 0x17A5->0x8BD2, ch 44 (loops=1, hops=9 RESYNC)
+FHSS: set ch44 = 925.080 MHz
+FHSS: defer pkt, hop ch3->ch44 after 365ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=613916 state=1
+txDone t=613916
+FHSS pkt#11
+FHSS: pkt, dwell_start=613678, now=614036, elapsed=358
+fhss_hop: lfsr 0x8BD2->0x45E9, ch 47 (loops=1, hops=10)
+FHSS: set ch47 = 926.640 MHz
+FHSS: defer pkt, hop ch44->ch47 after 358ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=614275 state=1
+txDone t=614275
+FHSS pkt#12
+FHSS: pkt, dwell_start=614036, now=614395, elapsed=359
+fhss_hop: lfsr 0x45E9->0xA2F4, ch 16 (loops=1, hops=11)
+FHSS: set ch16 = 910.520 MHz
+FHSS: defer pkt, hop ch47->ch16 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=614633 state=1
+txDone t=614633
+FHSS pkt#13
+FHSS: pkt, dwell_start=614395, now=614754, elapsed=359
+fhss_hop: lfsr 0xA2F4->0x517A, ch 8 (loops=1, hops=12 RESYNC)
+FHSS: set ch8 = 906.360 MHz
+FHSS: defer pkt, hop ch16->ch8 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=614992 state=1
+txDone t=614992
+FHSS pkt#14
+FHSS: pkt, dwell_start=614754, now=615113, elapsed=359
+fhss_hop: lfsr 0x517A->0x28BD, ch 29 (loops=1, hops=13)
+FHSS: set ch29 = 917.280 MHz
+FHSS: defer pkt, hop ch8->ch29 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=615351 state=1
+txDone t=615351
+FHSS pkt#15
+FHSS: pkt, dwell_start=615113, now=615478, elapsed=365
+fhss_hop: lfsr 0x28BD->0x145E, ch 14 (loops=1, hops=14)
+FHSS: set ch14 = 909.480 MHz
+FHSS: defer pkt, hop ch29->ch14 after 365ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=615716 state=1
+txDone t=615716
+FHSS pkt#16
+FHSS: pkt, dwell_start=615478, now=615836, elapsed=358
+fhss_hop: lfsr 0x145E->0x0A2F, ch 7 (loops=1, hops=15 RESYNC)
+FHSS: set ch7 = 905.840 MHz
+FHSS: defer pkt, hop ch14->ch7 after 358ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=616075 state=1
+txDone t=616075
+FHSS pkt#17
+FHSS: pkt, dwell_start=615836, now=616195, elapsed=359
+fhss_hop: lfsr 0x0A2F->0x0517, ch 3 (loops=1, hops=16)
+FHSS: set ch3 = 903.760 MHz
+FHSS: defer pkt, hop ch7->ch3 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=616433 state=1
+txDone t=616433
+FHSS pkt#18
+FHSS: pkt, dwell_start=616195, now=616554, elapsed=359
+fhss_hop: lfsr 0x0517->0x028B, ch 1 (loops=1, hops=17)
+FHSS: set ch1 = 902.720 MHz
+FHSS: defer pkt, hop ch3->ch1 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=616792 state=1
+txDone t=616792
+FHSS pkt#19
+FHSS: pkt, dwell_start=616554, now=616913, elapsed=359
+fhss_hop: lfsr 0x028B->0x0145, ch 25 (loops=1, hops=18 RESYNC)
+FHSS: set ch25 = 915.200 MHz
+FHSS: defer pkt, hop ch1->ch25 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=617151 state=1
+txDone t=617151
+FHSS pkt#20
+FHSS: pkt, dwell_start=616913, now=617278, elapsed=365
+fhss_hop: lfsr 0x0145->0x00A2, ch 12 (loops=1, hops=19)
+FHSS: set ch12 = 908.440 MHz
+FHSS: defer pkt, hop ch25->ch12 after 365ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=617516 state=1
+txDone t=617516
+FHSS pkt#21
+FHSS: pkt, dwell_start=617278, now=617636, elapsed=358
+fhss_hop: lfsr 0x00A2->0x8051, ch 49 (loops=1, hops=20)
+FHSS: set ch49 = 927.680 MHz
+FHSS: defer pkt, hop ch12->ch49 after 358ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=617875 state=1
+txDone t=617875
+FHSS pkt#22
+FHSS: pkt, dwell_start=617636, now=617995, elapsed=359
+fhss_hop: lfsr 0x8051->0xC028, ch 42 (loops=1, hops=21 RESYNC)
+FHSS: set ch42 = 924.040 MHz
+FHSS: defer pkt, hop ch49->ch42 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=618234 state=1
+txDone t=618234
+FHSS pkt#23
+FHSS: pkt, dwell_start=617995, now=618354, elapsed=359
+fhss_hop: lfsr 0xC028->0x6014, ch 46 (loops=1, hops=22)
+FHSS: set ch46 = 926.120 MHz
+FHSS: defer pkt, hop ch42->ch46 after 359ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=618592 state=1
+txDone t=618592
+FHSS pkt#24
+FHSS: pkt, dwell_start=618354, now=618719, elapsed=365
+fhss_hop: lfsr 0x6014->0xB00A, ch 16 (loops=1, hops=23)
+FHSS: set ch16 = 910.520 MHz
+FHSS: defer pkt, hop ch46->ch16 after 365ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+rxchar 'r'
+TX end
+unkey idx:32 cb:250 enc:220 tm:220 ne:220 pk:24
+FHSS: TX stopped (data_cnt=24)
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=618957 state=0
+txDone t=618957

@@ -1363,6 +1363,7 @@ void AudioLoopback_demo(void)
                     if (fhss_is_tx_data_ready() && !txing &&
                         tx_buf_idx >= lora_payload_length) {
                         fhss_data_pkt_cnt++;
+                        printf("FHSS pkt#%lu\r\n", fhss_data_pkt_cnt);
                         tx_encoded(lora_payload_length);
                         tx_buf_idx = 0;
                         mid = 0;

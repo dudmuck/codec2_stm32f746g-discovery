@@ -1,0 +1,183 @@
+th_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:8 bytes
+Codec2 frame period: 40 ms
+Packet: 72 bytes = 9 frames
+Packet time-on-air: 411 ms
+Codec2 production time for packet: 360 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 43 ms - OK (margin 317 ms)
+SF6: 73 ms - OK (margin 287 ms)
+SF7: 129 ms - OK (margin 231 ms)
+SF8: 226 ms - OK (margin 134 ms)
+SF9: 411 ms - TOO SLOW (exceeds by 51 ms)
+SF10: 781 ms - TOO SLOW (exceeds by 421 ms)
+SF11: 1643 ms - TOO SLOW (exceeds by 1283 ms)
+SF12: 2958 ms - TOO SLOW (exceeds by 2598 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=411ms margin=-51ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=226ms, margin=134ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=226 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=8, margin=134 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=72 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+sweep 1: 962 ms, mode=RX
+sweep 2: 276 ms, mode=RX
+CAD detected on ch42
+False CAD on ch42 (noise)
+sweep 3: 370 ms, mode=RX
+sweep 4: 333 ms, mode=RX
+sweep 5: 301 ms, mode=RX
+CAD detected on ch35
+False CAD on ch35 (noise)
+sweep 6: 349 ms, mode=RX
+CAD detected on ch36
+False CAD on ch36 (noise)
+rxchar 'T'
+Test mode ON
+ssweep 9: 282 ms, mode=RX
+CAD detected on ch15
+False CAD on ch15 (noise)
+sweep 10: 360 ms, mode=RX
+rxchar 't'
+TX start
+FHSS: stopping scan for TX
+keyup
+TX sync on ch16 (910.520 MHz), lfsr=0x7446, next_ch=1, hops=0, preamble=171
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sending sync packet
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=21875 state=0
+txDone t=21875
+FHSS: sync repeat 2/3 on ch35, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=22276 state=0
+txDone t=22276
+FHSS: sync repeat 3/3 on ch2, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=22677 state=0
+txDone t=22678
+FHSS: sync TX done, hop ch2->ch1, ready for data, dwell_ms=0
+PktCfg: pre=8 implicit crc=ON len=75
+FHSS data mode: pkt_len=75 (payload=72 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS: data mode configured, payload=72
+FHSS pkt#1
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=23217 state=1
+txDone t=23217
+FHSS pkt#2
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=23576 state=1
+txDone t=23576
+FHSS pkt#3
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=23934 state=1
+txDone t=23934
+FHSS pkt#4
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=24299 state=1
+txDone t=24299
+FHSS pkt#5
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=24658 state=1
+txDone t=24658
+FHSS pkt#6
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=25016 state=1
+txDone t=25016
+FHSS pkt#7
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=25374 state=1
+txDone t=25374
+FHSS pkt#8
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=25739 state=1
+txDone t=25739
+FHSS pkt#9
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=26098 state=1
+txDone t=26098
+FHSS pkt#10
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=26456 state=1
+txDone t=26456
+FHSS pkt#11
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=26814 state=1
+txDone t=26814
+FHSS pkt#12
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=27179 state=1
+txDone t=27179
+FHSS pkt#13
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=27538 state=1
+txDone t=27538
+FHSS pkt#14
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=27896 state=1
+txDone t=27896
+FHSS pkt#15
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=28254 state=1
+txDone t=28254
+FHSS pkt#16
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=28619 state=1
+txDone t=28619
+FHSS pkt#17
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=28978 state=1
+txDone t=28978
+FHSS pkt#18
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=29336 state=1
+txDone t=29336
+FHSS pkt#19
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=29701 state=1
+txDone t=29701
+FHSS pkt#20
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=30059 state=1
+txDone t=30059
+FHSS pkt#21
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=30418 state=1
+txDone t=30418
+FHSS pkt#22
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=30776 state=1
+txDone t=30776
+FHSS pkt#23
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=31141 state=1
+txDone t=31141
+FHSS pkt#24
+rxchar 'r'
+TX end
+unkey idx:40 cb:250 enc:221 tm:221 ne:221 pk:24
+FHSS: TX stopped (data_cnt=24)
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=31499 state=0
+txDone t=31499

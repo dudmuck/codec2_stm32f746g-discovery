@@ -1,0 +1,41 @@
+
+SF7 TOA=57ms margin=3ms (min=10), reducing SF...
+Adjusted SF7->SF6 (TOA=32ms, margin=28ms)
+NOTE: TX faster than encoding, buffering full packet
+Streaming config: feasible=0, min_init=3 frames, rec_sf=6, margin=28 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+rxchar 'h'
+FHSS scan starting...
+CAD configured: symb=2, peak=56, pnr_delta=8, timeout=100 ms
+FHSS scan started from ch0 (902.200 MHz)
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+CAD detected on ch12 (908.440 MHz)
+rxchar 'h'
+FHSS scan starting...
+CAD configured: symb=2, peak=56, pnr_delta=8, timeout=100 ms
+FHSS scan started from ch0 (902.200 MHz)
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+Full scan complete, no signal found
+CAD detected on ch38 (921.960 MHz)
+

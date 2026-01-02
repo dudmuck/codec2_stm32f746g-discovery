@@ -1,0 +1,34 @@
+
+add LR20XX_SYSTEM_IRQ_ERROR to irq_mask for lr20xx_system_set_dio_irq_cfg() at Init_lr20xx() in lr20xx_hal/radio_lr20xx.c
+
+add to LR20xx_service():
+
+        if (irqFlags & LR20XX_SYSTEM_IRQ_ERROR) {
+            lr20xx_system_errors_t errors;
+            if (lr20xx_system_get_errors(NULL, &errors) == LR20XX_STATUS_OK) {
+                printf("LR20xx ERROR: 0x%04X\r\n", errors);
+                if (errors & LR20XX_SYSTEM_ERRORS_HF_XOSC_START_MASK)
+                    printf("  HF_XOSC_START_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_LF_XOSC_START_MASK)
+                    printf("  LF_XOSC_START_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_PLL_LOCK_MASK)
+                    printf("  PLL_LOCK_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_LF_RC_CALIB_MASK)
+                    printf("  LF_RC_CALIB_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_HF_RC_CALIB_MASK)
+                    printf("  HF_RC_CALIB_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_PLL_CALIB_MASK)
+                    printf("  PLL_CALIB_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_AAF_CALIB_MASK)
+                    printf("  AAF_CALIB_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_IMG_CALIB_MASK)
+                    printf("  IMG_CALIB_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_MEAS_UNIT_ADC_CALIB_MASK)
+                    printf("  MEAS_UNIT_ADC_CALIB_ERR\r\n");
+                if (errors & LR20XX_SYSTEM_ERRORS_RXFREQ_NO_FRONT_END_CALIB_MASK)
+                    printf("  RXFREQ_NO_FRONT_END_CALIB_ERR\r\n");
+                lr20xx_system_clear_errors(NULL);
+            }
+        }
+
+

@@ -1,0 +1,171 @@
+sweep 42: 314 ms, mode=RX
+rxchar 'R'
+Resetting MCU...
+rxchar '3'
+UART selected rate: 1400
+Init_lr20xx
+radio reset
+radio reset ok
+LR20xx v1.24
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:320, _bytes_per_frame:7, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:7 bytes
+Codec2 frame period: 40 ms
+Packet: 49 bytes = 7 frames
+Packet time-on-air: 309 ms
+Codec2 production time for packet: 280 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 32 ms - OK (margin 248 ms)
+SF6: 55 ms - OK (margin 225 ms)
+SF7: 93 ms - OK (margin 187 ms)
+SF8: 175 ms - OK (margin 105 ms)
+SF9: 309 ms - TOO SLOW (exceeds by 29 ms)
+SF10: 576 ms - TOO SLOW (exceeds by 296 ms)
+SF11: 1233 ms - TOO SLOW (exceeds by 953 ms)
+SF12: 2302 ms - TOO SLOW (exceeds by 2022 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=309ms margin=-29ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=175ms, margin=105ms)
+NOTE: TX faster than encoding, buffering full packet
+Streaming config: feasible=0, min_init=7 frames, rec_sf=8, margin=105 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=49 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+sweep 1: 952 ms, mode=RX
+sweep 2: 287 ms, mode=RX
+rxchar 'T'
+Test mode ON
+sweep 3: 305 ms, mode=RX
+sweep 4: 309 ms, mode=RX
+sweep 5: 286 ms, mode=RX
+sweep 6: 307 ms, mode=RX
+sweep 7: 291 ms, mode=RX
+sweep 8: 282 ms, mode=RX
+sweep 9: 311 ms, mode=RX
+sweep 10: 287 ms, mode=RX
+sweep 11: 290 ms, mode=RX
+sweep 12: 299 ms, mode=RX
+sweep 13: 283 ms, mode=RX
+sweep 14: 307 ms, mode=RX
+sweep 15: 307 ms, mode=RX
+sweep 16: 290 ms, mode=RX
+sweep 17: 272 ms, mode=RX
+sweep 18: 287 ms, mode=RX
+sweep 19: 280 ms, mode=RX
+sweep 20: 313 ms, mode=RX
+sweep 21: 295 ms, mode=RX
+False CAD on ch0 (noise)
+sweep 22: 360 ms, mode=RX
+FHSS sync: lfsr=0x5593, next_ch=21, hop_count=0
+PktCfg: pre=8 implicit crc=ON len=52
+FHSS data mode: pkt_len=52 (payload=49 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS synchronized (rssi=-33.0, snr=15.2)
+fhss_hop: lfsr 0xAAC9->0x5564, ch 10 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch21->ch10
+fhss_hop: lfsr 0x5564->0x2AB2, ch 30 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch10->ch30
+FHSS: missed 3 packets (seq 5, expected 2)
+[31mDROP 21 frames (got 35, expected 14)[0m
+fhss_hop: lfsr 0x2AB2->0x9559, ch 33 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch30->ch33
+fhss_hop: lfsr 0x9559->0x4AAC, ch 16 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch33->ch16
+FHSS: missed 3 packets (seq 9, expected 6)
+[31mDROP 21 frames (got 63, expected 42)[0m
+13674ms for 25 frames ([31m42 dropped[0m, [33m0 dup[0m)
+13714ms for 25 frames
+fhss_hop: lfsr 0x4AAC->0xA556, ch 26 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch16->ch26
+fhss_hop: lfsr 0xA556->0xD2AB, ch 31 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch26->ch31
+FHSS: missed 3 packets (seq 13, expected 10)
+[31mDROP 21 frames (got 91, expected 70)[0m
+fhss_hop: lfsr 0xD2AB->0xE955, ch 33 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch31->ch33
+fhss_hop: lfsr 0xE955->0x74AA, ch 16 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch33->ch16
+FHSS: missed 3 packets (seq 17, expected 14)
+[31mDROP 21 frames (got 119, expected 98)[0m
+fhss_hop: lfsr 0x74AA->0x3A55, ch 33 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch16->ch33
+fhss_hop: lfsr 0x3A55->0x1D2A, ch 16 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch33->ch16
+FHSS: missed 3 packets (seq 21, expected 18)
+[31mDROP 21 frames (got 147, expected 126)[0m
+fhss_hop: lfsr 0x1D2A->0x0E95, ch 33 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch16->ch33
+fhss_hop: lfsr 0x0E95->0x074A, ch 16 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch33->ch16
+FHSS: missed 3 packets (seq 25, expected 22)
+[31mDROP 21 frames (got 175, expected 154)[0m
+4401ms for 25 frames ([31m84 dropped[0m, [33m0 dup[0m)
+4368ms for 25 frames
+fhss_hop: lfsr 0x074A->0x83A5, ch 1 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch16->ch1
+fhss_hop: lfsr 0x83A5->0xC1D2, ch 18 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch1->ch18
+FHSS: missed 3 packets (seq 29, expected 26)
+[31mDROP 21 frames (got 203, expected 182)[0m
+fhss_hop: lfsr 0xC1D2->0x60E9, ch 9 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch18->ch9
+fhss_hop: lfsr 0x60E9->0xB074, ch 22 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch9->ch22
+FHSS: missed 3 packets (seq 33, expected 30)
+[31mDROP 21 frames (got 231, expected 210)[0m
+fhss_hop: lfsr 0xB074->0x583A, ch 36 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch22->ch36
+fhss_hop: lfsr 0x583A->0x2C1D, ch 43 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch36->ch43
+FHSS: missed 3 packets (seq 37, expected 34)
+[31mDROP 21 frames (got 259, expected 238)[0m
+3481ms for 25 frames ([31m63 dropped[0m, [33m0 dup[0m)
+3514ms for 25 frames
+fhss_hop: lfsr 0x2C1D->0x960E, ch 14 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch43->ch14
+fhss_hop: lfsr 0x960E->0x4B07, ch 7 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch14->ch7
+FHSS: missed 3 packets (seq 41, expected 38)
+[31mDROP 21 frames (got 287, expected 266)[0m
+fhss_hop: lfsr 0x4B07->0x2583, ch 3 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch7->ch3
+fhss_hop: lfsr 0x2583->0x92C1, ch 19 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch3->ch19
+FHSS: missed 3 packets (seq 45, expected 42)
+[31mDROP 21 frames (got 315, expected 294)[0m
+fhss_hop: lfsr 0x92C1->0xC960, ch 2 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch19->ch2
+fhss_hop: lfsr 0xC960->0xE4B0, ch 44 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch2->ch44
+FHSS: 3 consecutive timeouts, returning to CAD scan
+RX stats: rx=16 crc_err=2 hdr_err=0 false_sync=1
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+False CAD on ch41 (noise)
+sweep 1: 366 ms, mode=RX
+sweep 2: 297 ms, mode=RX
+sweep 3: 274 ms, mode=RX
+sweep 4: 315 ms, mode=RX
+sweep 5: 295 ms, mode=RX
+False CAD on ch47 (noise)
+sweep 6: 337 ms, mode=RX
+sweep 7: 307 ms, mode=RX
+sweep 8: 295 ms, mode=RX

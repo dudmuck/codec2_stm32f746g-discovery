@@ -1,0 +1,5 @@
+fifo operation TODO:  The intention of the following is to reduce latency of the encoded speech on codec2 sent on radio transmitter.  To start transmiting earlier to reduce latency.
+1) eliminate LR20xx_tx_buf[] and replace with a frame buffer? but with care to the TX fifo emptying before TX_DONE IRQ, because the radio is sending bytes faster than codec2 encoder generates frames.  so, how to minimize latency, yet also prevent TX underflow before TX_DONE?  or can this be done with the existing LR20xx_tx_buf[]
+2) enable LR20XX_SYSTEM_IRQ_FIFO_TX for lr20xx_system_set_dio_irq_cfg() in Init_lr20xx()
+3) fifo flags to enable: for lr20xx_radio_fifo_cfg_irq() tx flags LR20XX_RADIO_FIFO_FLAG_THRESHOLD_LOW | LR20XX_RADIO_FIFO_FLAG_UNDERFLOW , where tx threshold is set according to _bytes_per_frame, which is known in main.c, after codec2_bits_per_frame() called and before calling AudioLoopback_demo()
+4) in lr20xx/lr20xx.c add into interrupt service "if (irqFlags & LR20XX_SYSTEM_IRQ_FIFO_TX)" to call lr20xx_radio_fifo_get_and_clear_irq_flags() and then call callback LR20xx_fifoTx() with the fifo flags as argument

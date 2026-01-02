@@ -1,0 +1,250 @@
+weep 44: 353 ms, mode=RX
+sweep 45: 294 ms, mode=RX
+CAD detected on ch36
+False CAD on ch36 (noise)
+sweep 46: 363 ms, mode=RX
+CAD detected on ch3
+False CAD on ch3 (noise)
+sweep 47: 349 ms, mode=RX
+sweep 48: 309 ms, mode=RX
+sweep 49: 307 ms, mode=RX
+CAD detected on ch0
+False CAD on ch0 (noise)
+CAD detected on ch49
+False CAD on ch49 (noise)
+sweep 50: 423 ms, mode=FS
+CAD detected on ch4
+False CAD on ch4 (noise)
+CAD detected on ch6
+False CAD on ch6 (noise)
+sweep 51: 417 ms, mode=RX
+sweep 52: 301 ms, mode=RX
+sweep 53: 291 ms, mode=RX
+CAD detected on ch4
+False CAD on ch4 (noise)
+sweep 54: 357 ms, mode=RX
+sweep 55: 291 ms, mode=RX
+Crxchar '2'
+UART selected rate: 1600
+Init_lr20xx
+radio reset
+radio reset ok
+LR20xx v1.24
+FE calibrated at 915 MHz
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:320, _bytes_per_frame:8, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:8 bytes
+Codec2 frame period: 40 ms
+Packet: 72 bytes = 9 frames
+Packet time-on-air: 411 ms
+Codec2 production time for packet: 360 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 43 ms - OK (margin 317 ms)
+SF6: 73 ms - OK (margin 287 ms)
+SF7: 129 ms - OK (margin 231 ms)
+SF8: 226 ms - OK (margin 134 ms)
+SF9: 411 ms - TOO SLOW (exceeds by 51 ms)
+SF10: 781 ms - TOO SLOW (exceeds by 421 ms)
+SF11: 1643 ms - TOO SLOW (exceeds by 1283 ms)
+SF12: 2958 ms - TOO SLOW (exceeds by 2598 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=411ms marginsweep 6: 380 ms, mode=RX
+sweep 7: 327 ms, mode=RX
+CAD detected on ch16
+FHSS sync on ch16: lfsr=0x7446, next_ch=1, hop_count=0
+PktCfg: pre=8 implicit crc=ON len=75
+FHSS data mode: pkt_len=75 (payload=72 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS synchronized (rssi=-28.0, snr=16.0) time=21578
+FHSS: RX started (was mode 1)
+FHSS: waiting for data on ch1 at time=21578
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xBA23->0x5D11, ch 25 (loops=1, hops=0)
+FHSS: set ch25 = 915.200 MHz
+FHSS: proactive hop ch1->ch25 (1 pkts)
+FHSS: data pkt ok (rssi=-27.0, snr=16.2)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x5D11->0xAE88, ch 30 (loops=1, hops=0)
+FHSS: set ch30 = 917.800 MHz
+FHSS: proactive hop ch25->ch30 (1 pkts)
+FHSS: data pkt ok (rssi=-29.0, snr=16.5)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xAE88->0xD744, ch 8 (loops=1, hops=0)
+FHSS: set ch8 = 906.360 MHz
+FHSS: proactive hop ch30->ch8 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.0)
+FHSS: already in RX mode
+23875ms for 25 frames OK
+23915ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xD744->0xEBA2, ch 22 (loops=1, hops=0)
+FHSS: set ch22 = 913.640 MHz
+FHSS: proactive hop ch8->ch22 (1 pkts)
+FHSS: data pkt ok (rssi=-28.0, snr=15.5)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xEBA2->0xF5D1, ch 29 (loops=1, hops=0)
+FHSS: set ch29 = 917.280 MHz
+FHSS: proactive hop ch22->ch29 (1 pkts)
+FHSS: data pkt ok (rssi=-29.0, snr=16.5)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xF5D1->0xFAE8, ch 32 (loops=1, hops=0)
+FHSS: set ch32 = 918.840 MHz
+FHSS: proactive hop ch29->ch32 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.8)
+FHSS: already in RX mode
+1000ms for 25 frames OK
+1000ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xFAE8->0x7D74, ch 16 (loops=1, hops=0)
+FHSS: set ch16 = 910.520 MHz
+FHSS: proactive hop ch32->ch16 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.0)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x7D74->0x3EBA, ch 8 (loops=1, hops=0)
+FHSS: set ch8 = 906.360 MHz
+FHSS: proactive hop ch16->ch8 (1 pkts)
+FHSS: data pkt ok (rssi=-28.0, snr=16.8)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x3EBA->0x1F5D, ch 29 (loops=1, hops=0)
+FHSS: set ch29 = 917.280 MHz
+FHSS: proactive hop ch8->ch29 (1 pkts)
+FHSS: data pkt ok (rssi=-28.0, snr=15.2)
+FHSS: already in RX mode
+1001ms for 25 frames OK
+1001ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x1F5D->0x8FAE, ch 32 (loops=1, hops=0)
+FHSS: set ch32 = 918.840 MHz
+FHSS: proactive hop ch29->ch32 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.2)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x8FAE->0xC7D7, ch 9 (loops=1, hops=0)
+FHSS: set ch9 = 906.880 MHz
+FHSS: proactive hop ch32->ch9 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.2)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xC7D7->0x63EB, ch 29 (loops=1, hops=0)
+FHSS: set ch29 = 917.280 MHz
+FHSS: proactive hop ch9->ch29 (1 pkts)
+FHSS: data pkt ok (rssi=-28.0, snr=16.0)
+FHSS: already in RX mode
+1015ms for 25 frames OK
+1000ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x63EB->0xB1F5, ch 7 (loops=1, hops=0)
+FHSS: set ch7 = 905.840 MHz
+FHSS: proactive hop ch29->ch7 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.2)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xB1F5->0xD8FA, ch 46 (loops=1, hops=0)
+FHSS: set ch46 = 926.120 MHz
+FHSS: proactive hop ch7->ch46 (1 pkts)
+FHSS: data pkt ok (rssi=-28.0, snr=15.5)
+FHSS: already in RX mode
+985ms for 25 frames OK
+1000ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xD8FA->0x6C7D, ch 23 (loops=1, hops=0)
+FHSS: set ch23 = 914.160 MHz
+FHSS: proactive hop ch46->ch23 (1 pkts)
+FHSS: data pkt ok (rssi=-31.0, snr=17.5)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x6C7D->0x363E, ch 36 (loops=1, hops=0)
+FHSS: set ch36 = 920.920 MHz
+FHSS: proactive hop ch23->ch36 (1 pkts)
+FHSS: data pkt ok (rssi=-29.0, snr=16.5)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x363E->0x9B1F, ch 11 (loops=1, hops=0)
+FHSS: set ch11 = 907.920 MHz
+FHSS: proactive hop ch36->ch11 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.2)
+FHSS: already in RX mode
+1000ms for 25 frames OK
+1000ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x9B1F->0xCD8F, ch 23 (loops=1, hops=0)
+FHSS: set ch23 = 914.160 MHz
+FHSS: proactive hop ch11->ch23 (1 pkts)
+FHSS: data pkt ok (rssi=-28.0, snr=17.5)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xCD8F->0xE6C7, ch 29 (loops=1, hops=0)
+FHSS: set ch29 = 917.280 MHz
+FHSS: proactive hop ch23->ch29 (1 pkts)
+FHSS: data pkt ok (rssi=-29.0, snr=16.5)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0xE6C7->0x7363, ch 39 (loops=1, hops=0)
+FHSS: set ch39 = 922.480 MHz
+FHSS: proactive hop ch29->ch39 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.2)
+FHSS: already in RX mode
+1000ms for 25 frames OK
+1000ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x7363->0x39B1, ch 19 (loops=1, hops=0)
+FHSS: set ch19 = 912.080 MHz
+FHSS: proactive hop ch39->ch19 (1 pkts)
+FHSS: data pkt ok (rssi=-31.0, snr=15.8)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x39B1->0x1CD8, ch 34 (loops=1, hops=0)
+FHSS: set ch34 = 919.880 MHz
+FHSS: proactive hop ch19->ch34 (1 pkts)
+FHSS: data pkt ok (rssi=-29.0, snr=16.8)
+FHSS: already in RX mode
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x1CD8->0x8E6C, ch 10 (loops=1, hops=0)
+FHSS: set ch10 = 907.400 MHz
+FHSS: proactive hop ch34->ch10 (1 pkts)
+FHSS: data pkt ok (rssi=-30.0, snr=16.2)
+FHSS: already in RX mode
+1000ms for 25 frames OK
+1000ms for 25 frames
+FHSS: RX pkt check: pkts=1 hop_cnt=1
+fhss_hop: lfsr 0x8E6C->0xC736, ch 48 (loops=1, hops=0)
+FHSS: set ch48 = 927.160 MHz
+FHSS: proactive hop ch10->ch48 (1 pkts)
+FHSS: data pkt ok (rssi=-28.0, snr=15.5)
+FHSS: already in RX mode
+DEBUG: now=31880 sync_ms=21578 since=10302
+fhss_hop: lfsr 0xC736->0x639B, ch 49 (loops=1, hops=0)
+FHSS: set ch49 = 927.680 MHz
+FHSS: RX timeout 1/3, hop ch48->ch49
+rxchar '?'
+Test stats: frames=216 dropped=0 dup=0 gaps=0 overflow=0/0
+  fifo_rx_irqs=24
+DEBUG: now=32204 sync_ms=21578 since=10626
+fhss_hop: lfsr 0x639B->0x98E6, ch 42 (loops=2, hops=0)
+FHSS: set ch42 = 924.040 MHz
+FHSS: RX timeout 2/3, hop ch49->ch42
+DEBUG: now=32528 sync_ms=21578 since=10950
+FHSS: 3 consecutive timeouts, returning to CAD scan
+RX stats: rx=25 crc_err=0 hdr_err=0 false_sync=1
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)

@@ -1,0 +1,193 @@
+sweep 16: 153 ms, mode=RX
+sweep 17: 153 ms, mode=RX
+rxchar 'R'
+Resetting MCU...
+rxchar '5'
+UART selected rate: 1200
+Init_lr20xx
+radio reset
+radio reset ok
+LR20xx v1.24
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:320, _bytes_per_frame:6, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:6 bytes
+Codec2 frame period: 40 ms
+Packet: 36 bytes = 6 frames
+Packet time-on-air: 247 ms
+Codec2 production time for packet: 240 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 25 ms - OK (margin 215 ms)
+SF6: 43 ms - OK (margin 197 ms)
+SF7: 78 ms - OK (margin 162 ms)
+SF8: 134 ms - OK (margin 106 ms)
+SF9: 247 ms - TOO SLOW (exceeds by 7 ms)
+SF10: 453 ms - TOO SLOW (exceeds by 213 ms)
+SF11: 988 ms - TOO SLOW (exceeds by 748 ms)
+SF12: 1811 ms - TOO SLOW (exceeds by 1571 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=247ms margin=-7ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=134ms, margin=106ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 2 (pkt_toa=134 ms)
+Streaming config: feasible=0, min_init=6 frames, rec_sf=8, margin=106 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=36 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+sweep 1: 954 ms, mode=RX
+False CAD on ch25 (noise)
+sweep 2: 371 ms, mode=RX
+rxchar 'T'
+Test mode ON
+sweep 3: 288 ms, mode=RX
+sweep 4: 313 ms, mode=RX
+False CAD on ch24 (noise)
+False CAD on ch31 (noise)
+sweep 5: 400 ms, mode=RX
+sweep 6: 293 ms, mode=RX
+sweep 7: 307 ms, mode=RX
+False CAD on ch48 (noise)
+sweep 8: 338 ms, mode=RX
+sweep 9: 291 ms, mode=RX
+sweep 10: 295 ms, mode=RX
+sweep 11: 286 ms, mode=RX
+sweep 12: 306 ms, mode=RX
+sweep 13: 286 ms, mode=RX
+sweep 14: 282 ms, mode=RX
+sweep 15: 295 ms, mode=RX
+sweep 16: 299 ms, mode=RX
+sweep 17: 319 ms, mode=RX
+sweep 18: 301 ms, mode=RX
+False CAD on ch1 (noise)
+False CAD on ch16 (noise)
+sweep 19: 397 ms, mode=RX
+sweep 20: 297 ms, mode=RX
+FHSS sync: lfsr=0x5593, next_ch=21, hop_count=0
+PktCfg: pre=8 implicit crc=ON len=39
+FHSS data mode: pkt_len=39 (payload=36 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS synchronized (rssi=-32.0, snr=15.8)
+fhss_hop: lfsr 0xAAC9->0x5564, ch 10 (loops=1, hops=0)
+FHSS: RX timeout 1/3, hop ch21->ch10
+fhss_hop: lfsr 0x5564->0x2AB2, ch 30 (loops=1, hops=0)
+FHSS: RX timeout 2/3, hop ch10->ch30
+FHSS: 3 consecutive timeouts, returning to CAD scan
+RX stats: rx=3 crc_err=0 hdr_err=0 false_sync=1
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+False CAD on ch41 (noise)
+sweep 1: 346 ms, mode=RX
+False CAD on ch5 (noise)
+False CAD on ch27 (noise)
+sweep 2: 403 ms, mode=RX
+False CAD on ch15 (noise)
+False CAD on ch37 (noise)
+sweep 3: 412 ms, mode=RX
+False CAD on ch20 (noise)
+Short preamble on ch42 (2 confirms) - data channel?
+sweep 4: 456 ms, mode=RX
+False CAD on ch17 (noise)
+False CAD on ch49 (noise)
+sweep 5: 396 ms, mode=FS
+False CAD on ch6 (noise)
+Short preamble on ch27 (1 confirms) - data channel?
+False CAD on ch38 (noise)
+sweep 6: 524 ms, mode=RX
+False CAD on ch17 (noise)
+False CAD on ch49 (noise)
+sweep 7: 419 ms, mode=FS
+False CAD on ch6 (noise)
+False CAD on ch15 (noise)
+Short preamble on ch16 (2 confirms) - data channel?
+False CAD on ch17 (noise)
+Short preamble on ch27 (1 confirms) - data channel?
+False CAD on ch49 (noise)
+sweep 8: 706 ms, mode=FS
+False CAD on ch0 (noise)
+False CAD on ch33 (noise)
+sweep 9: 390 ms, mode=RX
+False CAD on ch5 (noise)
+False CAD on ch38 (noise)
+sweep 10: 380 ms, mode=RX
+False CAD on ch28 (noise)
+sweep 11: 351 ms, mode=RX
+Short preamble on ch1 (2 confirms) - data channel?
+False CAD on ch2 (noise)
+False CAD on ch18 (noise)
+sweep 12: 456 ms, mode=RX
+Short preamble on ch7 (1 confirms) - data channel?
+Short preamble on ch9 (2 confirms) - data channel?
+sweep 13: 487 ms, mode=RX
+False CAD on ch8 (noise)
+False CAD on ch22 (noise)
+False CAD on ch33 (noise)
+sweep 14: 453 ms, mode=RX
+False CAD on ch0 (noise)
+Short preamble on ch25 (1 confirms) - data channel?
+False CAD on ch47 (noise)
+sweep 15: 529 ms, mode=RX
+False CAD on ch2 (noise)
+False CAD on ch16 (noise)
+Short preamble on ch43 (2 confirms) - data channel?
+sweep 16: 442 ms, mode=RX
+False CAD on ch36 (noise)
+sweep 17: 346 ms, mode=RX
+False CAD on ch14 (noise)
+False CAD on ch24 (noise)
+sweep 18: 401 ms, mode=RX
+sweep 19: 299 ms, mode=RX
+Short preamble on ch14 (2 confirms) - data channel?
+sweep 20: 347 ms, mode=RX
+False CAD on ch3 (noise)
+False CAD on ch20 (noise)
+False CAD on ch30 (noise)
+sweep 21: 441 ms, mode=RX
+False CAD on ch0 (noise)
+False CAD on ch8 (noise)
+sweep 22: 396 ms, mode=RX
+False CAD on ch13 (noise)
+False CAD on ch21 (noise)
+Short preamble on ch33 (2 confirms) - data channel?
+sweep 23: 508 ms, mode=RX
+Short preamble on ch40 (2 confirms) - data channel?
+sweep 24: 357 ms, mode=RX
+Short preamble on ch29 (1 confirms) - data channel?
+Short preamble on ch38 (1 confirms) - data channel?
+False CAD on ch49 (noise)
+sweep 25: 650 ms, mode=RX
+False CAD on ch11 (noise)
+Short preamble on ch23 (2 confirms) - data channel?
+False CAD on ch34 (noise)
+sweep 26: 430 ms, mode=RX
+Short preamble on ch12 (1 confirms) - data channel?
+False CAD on ch40 (noise)
+sweep 27: 466 ms, mode=RX
+sweep 28: 280 ms, mode=RX
+sweep 29: 297 ms, mode=RX
+sweep 30: 308 ms, mode=RX
+sweep 31: 302 ms, mode=RX
+sweep 32: 302 ms, mode=RX
+False CAD on ch1 (noise)
+sweep 33: 345 ms, mode=RX
+False CAD on ch0 (noise)
+False CAD on ch29 (noise)
+sweep 34: 408 ms, mode=RX
+sweep 35: 276 ms, mode=RX
+sweep 36: 290 ms, mode=RX

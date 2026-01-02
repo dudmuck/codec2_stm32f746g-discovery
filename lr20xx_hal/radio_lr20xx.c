@@ -42,6 +42,8 @@ volatile uint32_t stream_underflow_count = 0;
 
 void Radio_txDoneBottom()
 {
+    extern uint32_t HAL_GetTick(void);
+    printf("TxDoneBot t=%lu state=%u\r\n", HAL_GetTick(), stream_state);
     uint8_t tx_continuing = 0;  /* Flag: did we start next TX immediately? */
     streaming_tx_active = 0;
 
@@ -91,8 +93,8 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
     /* Check if this is an FHSS sync packet */
     if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
         /* Reject sync packets with poor signal quality (likely noise/false detect).
-         * SF7 can decode at SNR down to about -7.5dB, so use -8.0 as threshold. */
-        if (snr < -8.0f || rssi < -115.0f) {
+         * SF8 can decode at SNR down to about -10dB, so use -10.5 as threshold. */
+        if (snr < -10.5f || rssi < -115.0f) {
             printf("FHSS: rejecting weak sync (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
             /* Resume scanning */
             fhss_start_scan();
@@ -101,10 +103,17 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
         if (fhss_rx_sync_packet(LR20xx_rx_buf, size)) {
             /* Sync packet processed - RX is now synchronized with TX.
              * Configure data mode and start RX for data packets. */
-            printf("FHSS synchronized (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
+            extern uint32_t HAL_GetTick(void);
+            printf("FHSS synchronized (rssi=%.1f, snr=%.1f) time=%lu\r\n", rssi, snr, HAL_GetTick());
             /* Use fhss_rx_data() to properly set up streaming state
              * (clears FIFO, sets rx_decode_idx to skip header) */
             fhss_rx_data();
+            printf("FHSS: waiting for data on ch%u at time=%lu\r\n", fhss_cfg.current_channel, HAL_GetTick());
+            return;
+        } else {
+            /* Invalid sync packet - restart scanning (prints stats) */
+            printf("FHSS: sync fail (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
+            fhss_start_scan();
             return;
         }
     }
@@ -115,11 +124,14 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
         if (payload_len > 0) {
             /* Don't strip header - rx_decode_idx is set to skip it.
              * Pass full packet size; streaming decode uses rx_decode_idx offset. */
+            printf("FHSS: data pkt ok (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
             RadioEvents->RxDone(size, rssi, snr);
             /* Start RX for next packet (resets rx_decode_idx to skip header) */
             fhss_rx_data();
             return;
         }
+        /* Invalid data packet - log signal quality for debugging */
+        printf("FHSS: bad data pkt (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
         /* Invalid data packet - start RX for retry */
         fhss_rx_data();
         return;
@@ -176,6 +188,9 @@ static int lr20xx_hal_wait_on_busy( unsigned cnts )
 	}
 	return 0;
 }
+
+/* Forward declaration for use in Init_lr20xx */
+static uint32_t last_calibrated_freq_hz;
 
 static void Init_lr20xx(const RadioEvents_t* e)
 {
@@ -335,6 +350,23 @@ static void Init_lr20xx(const RadioEvents_t* e)
 		ASSERT_LR20XX_RC( lr20xx_system_set_dio_irq_cfg(NULL, LR20XX_SYSTEM_DIO_8, irq_mask) );
 	}
 
+	/* Calibrate front-end at 915 MHz (center of US ISM band 902-928 MHz).
+	 * This must be done once at startup for optimal image rejection.
+	 * Reference: Must set RF frequency before calibrating.
+	 * SetChannel will not recalibrate since FHSS band is <50 MHz wide. */
+	{
+		/* Set frequency to center of band before calibration */
+		ASSERT_LR20XX_RC( lr20xx_radio_common_set_rf_freq(NULL, 915000000) );
+
+		lr20xx_radio_common_front_end_calibration_value_t calibration = {
+			.frequency_in_hertz = 915000000,
+			.rx_path = LR20XX_RADIO_COMMON_RX_PATH_LF,
+		};
+		ASSERT_LR20XX_RC( lr20xx_radio_common_calibrate_front_end_helper(NULL, &calibration, 1) );
+		last_calibrated_freq_hz = 915000000;  /* Prevent recalibration in SetChannel */
+		printf("FE calibrated at 915 MHz\r\n");
+	}
+
 	{
 		lr20xx_system_version_t version;
 		ASSERT_LR20XX_RC(lr20xx_system_get_version(NULL, &version));
@@ -406,7 +438,7 @@ static void LoRaModemConfig_lr20xx(unsigned bwKHz, uint8_t sf, uint8_t cr)
 /* Calibration delta threshold in Hz (50 MHz) */
 #define LR20XX_CALIBRATION_DELTA_HZ    50000000
 
-static uint32_t last_calibrated_freq_hz = 0;
+/* last_calibrated_freq_hz is declared earlier and set in Init_lr20xx */
 static uint32_t current_rf_freq_hz = 0;
 
 void SetChannel_lr20xx(unsigned hz)
@@ -1008,11 +1040,23 @@ void calculate_streaming_config(void)
     /* Set inter-packet timeout based on margin + buffer.
      * This must be longer than the gap between packets to avoid false timeouts.
      * Gap between packets = margin_ms (when TX is faster than encoding).
-     * Add pkt_toa/2 + 50ms for safety. */
+     * Add pkt_toa/2 + 50ms for safety.
+     * Also ensure timeout >= codec2_production_time for first packet after sync. */
     {
         uint32_t actual_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
         uint32_t margin_abs = (streaming_cfg.margin_ms > 0) ? streaming_cfg.margin_ms : 0;
-        inter_pkt_timeout = margin_abs + actual_toa / 2 + 50;
+        uint32_t timeout_calc = margin_abs + actual_toa / 2 + 50;
+
+        /* Ensure timeout is at least codec2_production_time + buffer for first packet */
+        if (timeout_calc < codec2_production_time + 100) {
+            timeout_calc = codec2_production_time + 100;
+        }
+        inter_pkt_timeout = timeout_calc;
+
+        /* Set FHSS proactive hop count based on codec2 production time.
+         * TX sends a new packet when codec2 produces it, so hop timing
+         * depends on how many production intervals fit before defer threshold. */
+        fhss_set_proactive_hop_count(codec2_production_time, actual_toa);
     }
 
     printf("Streaming config: feasible=%u, min_init=%u frames, rec_sf=%u, margin=%ld ms\r\n",

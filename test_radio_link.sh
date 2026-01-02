@@ -328,7 +328,12 @@ run_tests_for_bw() {
 
     echo ""
     echo "########################################"
-    echo "# Testing at ${TARGET_BW}kHz bandwidth"
+    local bw_steps=${BW_STEPS[$TARGET_BW]}
+    if [ "$bw_steps" -eq 0 ]; then
+        echo "# Testing at default bandwidth (no change)"
+    else
+        echo "# Testing at ${TARGET_BW}kHz bandwidth"
+    fi
     echo "########################################"
 
     if [ -n "$SINGLE_RATE" ]; then
@@ -354,7 +359,11 @@ if [ "$TARGET_BW" = "all" ]; then
     echo "Bandwidth: ALL (${ALL_BWS[*]} kHz)"
     TEST_ALL_BW=1
 else
-    echo "Bandwidth: ${TARGET_BW}kHz"
+    if [ "${BW_STEPS[$TARGET_BW]}" -eq 0 ]; then
+        echo "Bandwidth: default (not changed)"
+    else
+        echo "Bandwidth: ${TARGET_BW}kHz"
+    fi
     TEST_ALL_BW=0
     # Validate single bandwidth
     if [ -z "${BW_STEPS[$TARGET_BW]}" ]; then

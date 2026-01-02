@@ -1,0 +1,218 @@
+me_size:8 bytes
+Codec2 frame period: 40 ms
+Packet: 72 bytes = 9 frames
+Packet time-on-air: 411 ms
+Codec2 production time for packet: 360 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 43 ms - OK (margin 317 ms)
+SF6: 73 ms - OK (margin 287 ms)
+SF7: 129 ms - OK (margin 231 ms)
+SF8: 226 ms - OK (margin 134 ms)
+SF9: 411 ms - TOO SLOW (exceeds by 51 ms)
+SF10: 781 ms - TOO SLOW (exceeds by 421 ms)
+SF11: 1643 ms - TOO SLOW (exceeds by 1283 ms)
+SF12: 2958 ms - TOO SLOW (exceeds by 2598 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No viable packet size (even 1 frame is too slow)
+=================================
+
+SF9 TOA=411ms margin=-51ms (min=10), reducing SF...
+Adjusted SF9->SF8 (TOA=226ms, margin=134ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=226 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=8, margin=134 ms
+FHSS initialized: 50 channels, 902.2 MHz - 927.7 MHz
+FHSS: RX expected payload=72 bytes
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+CAD detected on ch36
+False CAD on ch36 (noise)
+sweep 1: 1016 ms, mode=RX
+CAD detected on ch32
+False CAD on ch32 (noise)
+sweep 2: 354 ms, mode=RX
+sweep 3: 307 ms, mode=RX
+CAD detected on ch36
+False CAD on ch36 (noise)
+CAD detected on ch42
+False CAD on ch42 (noise)
+sweep 4: 422 ms, mode=RX
+sweep 5: 286 ms, mode=RX
+sweep 6: 297 ms, mode=RX
+sweep 9: 290 ms, mode=RX
+sweep 10: 299 ms, mode=RX
+CAD detected on ch8
+False CAD on ch8 (noise)
+rxchar 't'
+TX start
+FHSS: stopping scan for TX
+keyup
+TX sync on ch29 (917.280 MHz), lfsr=0x130F, next_ch=7, hops=0, preamble=171
+PktCfg: pre=171 explicit crc=ON len=5
+Send_lr20xx(5) start
+Send_lr20xx: size=5 chipMode=5 DIO8=0 BUSY=1
+FHSS: sending sync packet
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=39956 state=0
+txDone t=39956
+FHSS: sync repeat 2/3 on ch41, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+Send_lr20xx(5) start
+Send_lr20xx: size=5 chipMode=5 DIO8=0 BUSY=1
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=40357 state=0
+txDone t=40357
+FHSS: sync repeat 3/3 on ch8, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+Send_lr20xx(5) start
+Send_lr20xx: size=5 chipMode=5 DIO8=0 BUSY=1
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=40759 state=0
+txDone t=40759
+FHSS: sync TX done, hop ch8->ch7, ready for data, dwell_ms=0
+PktCfg: pre=8 implicit crc=ON len=75
+FHSS data mode: pkt_len=75 (payload=72 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS: data mode configured, payload=72
+FHSS pkt#1
+FHSS: first pkt, setting dwell_start=41086
+FHSS: TX data seq=0 ch=7 len=75
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=41324 state=1
+txDone t=41324
+FHSS pkt#2
+FHSS: pkt, dwell_start=41086, now=41444, elapsed=358
+fhss_hop: lfsr 0x8987->0x44C3, ch 3 (loops=1, hops=1)
+FHSS: set ch3 = 903.760 MHz
+FHSS: defer pkt, hop ch7->ch3 after 358ms
+Send_lr20xx(75) start
+Send_lr20xx: size=75 chipMode=5 DIO8=0 BUSY=1
+defer sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=41682 state=1
+txDone t=41682
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=42032 state=4
+txDone t=42032
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=42396 state=4
+txDone t=42396
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=42754 state=4
+txDone t=42754
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=43112 state=4
+txDone t=43113
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=43477 state=4
+txDone t=43477
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=43835 state=4
+txDone t=43835
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=44193 state=4
+txDone t=44193
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=44551 state=4
+txDone t=44551
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=44916 state=4
+txDone t=44916
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=45274 state=4
+txDone t=45274
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=45632 state=4
+txDone t=45632
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=45997 state=4
+txDone t=45997
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=46355 state=4
+txDone t=46355
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=46713 state=4
+txDone t=46713
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=47077 state=4
+txDone t=47077
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=47435 state=4
+txDone t=47435
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=47794 state=4
+txDone t=47794
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=48152 state=4
+txDone t=48152
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=48516 state=4
+txDone t=48516
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=48874 state=4
+txDone t=48874
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=49233 state=4
+txDone t=49233
+BUG? TX_ACTIVE set in non-FHSS path!
+BUG? STREAM_WAIT_TX set in non-FHSS path!
+rxchar 'r'
+TX end
+unkey idx:32 cb:250 enc:220 tm:220 ne:220 pk:2
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=49597 state=0
+txDone t=49597

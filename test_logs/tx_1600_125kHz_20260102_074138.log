@@ -1,0 +1,163 @@
+rted from ch0 (902.200 MHz)
+sweep 1: 976 ms, mode=RX
+sweep 2: 283 ms, mode=RX
+sweep 3: 300 ms, mode=RX
+CAD detected on ch41
+False CAD on ch41 (noise)
+sweep 4: 374 ms, mode=RX
+sweep 5: 338 ms, mode=RX
+sweep 6: 289 ms, mode=RX
+sweep 7: 302 ms, mode=RX
+rxchar 'b'
+SF8 TOA=702ms margin=-342ms (min=10), reducing SF...
+Adjusted SF: proactive hop count = 1 (prod=360 ms, toa=239 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=6, margin=121 ms
+BW=83kHz SF6
+fhss_poll timeout
+rxchar 'b'
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=318 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=6, margin=42 ms
+BW=63kHz SF6
+fhss_poll timeout
+rxchar 'b'
+SF6 TOA=477ms margin=-117ms (min=10), reducing SF...
+Adjusted SF6->SF5 (TOA=258ms, margin=102ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=258 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=5, margin=102 ms
+BW=42kHz SF5
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+rxchar 'T'
+Test mode ON
+fhss_poll timeout
+fhss_poll timeout
+rxchar 't'
+TX start
+fhss_poll timeout
+FHSS: stopping scan for TX
+keyup
+TX sync on ch45 (925.600 MHz), lfsr=0x8499, next_ch=22, hops=0, preamble=171
+PktCfg: pre=171 explicit crc=ON len=5
+FHSS: sending sync packet
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=50572 state=0
+txDone t=50572
+FHSS: sync repeat 2/3 on ch6, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=50732 state=0
+txDone t=50732
+FHSS: sync repeat 3/3 on ch23, hops=0
+PktCfg: pre=171 explicit crc=ON len=5
+sync sent ret=0
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=50892 state=0
+txDone t=50892
+FHSS: sync TX done, hop ch23->ch22, ready for data, dwell_ms=0
+PktCfg: pre=8 implicit crc=ON len=75
+FHSS data mode: pkt_len=75 (payload=72 + hdr=3), implicit header
+FHSS: indices reset fifo=0 dec=3 exp_seq=0
+FHSS: data mode configured, payload=72
+FHSS pkt#1
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=51326 state=1
+txDone t=51326
+FHSS pkt#2
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=51685 state=1
+txDone t=51685
+FHSS pkt#3
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=52044 state=1
+txDone t=52044
+FHSS pkt#4
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=52410 state=1
+txDone t=52410
+FHSS pkt#5
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=52769 state=1
+txDone t=52769
+FHSS pkt#6
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=53128 state=1
+txDone t=53128
+FHSS pkt#7
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=53488 state=1
+txDone t=53488
+FHSS pkt#8
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=53847 state=1
+txDone t=53847
+FHSS pkt#9
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=54206 state=1
+txDone t=54206
+FHSS pkt#10
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=54566 state=1
+txDone t=54566
+FHSS pkt#11
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=54925 state=1
+txDone t=54925
+FHSS pkt#12
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=55290 state=1
+txDone t=55290
+FHSS pkt#13
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=55650 state=1
+txDone t=55650
+FHSS pkt#14
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=56009 state=1
+txDone t=56009
+FHSS pkt#15
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=56368 state=1
+txDone t=56368
+FHSS pkt#16
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=56727 state=1
+txDone t=56727
+FHSS pkt#17
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=57087 state=1
+txDone t=57087
+FHSS pkt#18
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=57446 state=1
+txDone t=57446
+FHSS pkt#19
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=57805 state=1
+txDone t=57805
+FHSS pkt#20
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=58171 state=1
+txDone t=58171
+FHSS pkt#21
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=58530 state=1
+txDone t=58530
+FHSS pkt#22
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=58889 state=1
+txDone t=58889
+FHSS pkt#23
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=59249 state=1
+txDone t=59249
+rxchar 'r'
+TX end
+unkey idx:64 cb:226 enc:215 tm:215 ne:215 pk:23
+FHSS: TX stopped (data_cnt=23)
+TX_DONE IRQ flags=0x00080008
+TxDoneBot t=59565 state=0
+txDone t=59565

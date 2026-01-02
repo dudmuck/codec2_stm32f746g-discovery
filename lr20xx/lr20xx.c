@@ -74,6 +74,7 @@ void LR20xx_setStandby(lr20xx_system_standby_mode_t sm)
 
 bool LR20xx_service()
 {
+
     if (BUSY) {
         return true;
     }
@@ -87,11 +88,13 @@ bool LR20xx_service()
         LR20xx_chipMode = stat.bits.chip_mode;
 
         if (irqFlags & LR20XX_SYSTEM_IRQ_TX_DONE) {
+            printf("TX_DONE IRQ flags=0x%08lX\r\n", (unsigned long)irqFlags);
             if (LR20xx_txDone)
                 LR20xx_txDone();
         }
 
-        /* Handle LORA_HEADER_ERROR - clear FIFO to prevent stale data */
+        /* Handle LORA_HEADER_ERROR - clear FIFO to prevent stale data.
+         * Stats are tracked by radio and reported via fhss_print_and_reset_rx_stats(). */
         if (irqFlags & LR20XX_SYSTEM_IRQ_LORA_HEADER_ERROR) {
             lr20xx_radio_fifo_clear_rx(NULL);
         }

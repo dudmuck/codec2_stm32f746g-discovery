@@ -1,0 +1,197 @@
+reset
+radio reset ok
+LR20xx v1.24
+FE calibrated at 915 MHz
+Z LR20xx v1.24
+PktCfg: pre=8 explicit crc=OFF len=0
+nsamp:320, _bytes_per_frame:8, frame_length_bytes:0
+
+=== Streaming Timing Analysis ===
+SF:9 BW:125kHz frame_size:8 bytes
+Codec2 frame period: 40 ms
+Packet: 72 bytes = 9 frames
+Packet time-on-air: 411 ms
+Codec2 production time for packet: 360 ms
+WARNING: packet_toa > production_time - buffer will drain!
+
+--- SF Feasibility Analysis ---
+SF5: 43 ms - OK (margin 317 ms)
+SF6: 73 ms - OK (margin 287 ms)
+SF7: 129 ms - OK (margin 231 ms)
+SF8: 226 ms - OK (margin 134 ms)
+SF9: 411 ms - TOO SLOW (exceeds by 51 ms)
+SF10: 781 ms - TOO SLOW (exceeds by 421 ms)
+SF11: 1643 ms - TOO SLOW (exceeds by 1283 ms)
+SF12: 2958 ms - TOO SLOW (exceeds by 2598 ms)
+
+Maximum usable SF: 8 (current: 9)
+
+--- SF12 Optimal Packet Size ---
+SF12: No virxchar 'T'
+Test mode ON
+sweep 4: 313 ms, mode=RX
+sweep 5: 315 ms, mode=RX
+sweep 6: 305 ms, mode=RX
+sweep 7: 327 ms, mode=RX
+CAD detected on ch33
+fhss_poll timeout
+fhss_poll: forcing return to scan from RX_SYNC
+RX stats: rx=1 crc_err=1 hdr_err=0 false_sync=1
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+CAD detected on ch8
+False CAD on ch8 (noise)
+CAD detected on ch9
+False CAD on ch9 (noise)
+CAD detected on ch10
+Short preamble on ch10 (2 confirms) - data channel?
+CAD detected on ch21
+Short preamble on ch21 (2 confirms) - data channel?
+CAD detected on ch37
+fhss_poll timeout
+fhss_poll: forcing return to scan from RX_SYNC
+RX stats: rx=1 crc_err=1 hdr_err=0 false_sync=1
+FHSS scan starting...
+CAD configured: symb=4, peak=54, pnr_delta=8, timeout=36 ms (SF8 BW125kHz)
+Sync preamble: 171 symbols (350 ms)
+PktCfg: pre=171 explicit crc=ON len=0
+FHSS scan started from ch0 (902.200 MHz)
+CAD detected on ch20
+False CAD on ch20 (noise)
+CAD detected on ch49
+False CAD on ch49 (noise)
+sweep 1: 390 ms, mode=RX
+CAD detected on ch5
+Short preamble on ch5 (1 confirms) - data channel?
+CAD detected on ch28
+False CAD on ch28 (noise)
+CAD detected on ch39
+False CAD on ch39 (noise)
+sweep 2: 560 ms, mode=RX
+CAD detected on ch14
+Short preamble on ch14 (2 confirms) - data channel?
+CAD detected on ch25
+False CAD on ch25 (noise)
+sweep 3: 430 ms, mode=RX
+CAD detected on ch0
+False CAD on ch0 (noise)
+CAD detected on ch21
+False CAD on ch21 (noise)
+CAD detected on ch47
+False CAD on ch47 (noise)
+sweep 4: 463 ms, mode=RX
+CAD detected on ch9
+False CAD on ch9 (noise)
+CAD detected on ch43
+False CAD on ch43 (noise)
+sweep 5: 403 ms, mode=RX
+CAD detected on ch35
+Short preamble on ch35 (1 confirms) - data channel?
+CAD detected on ch39
+False CAD on ch39 (noise)
+sweep 6: 496 ms, mode=RX
+CAD detected on ch16
+False CAD on ch16 (noise)
+CAD detected on ch27
+Short preamble on ch27 (1 confirms) - data channel?
+CAD detected on ch39
+False CAD on ch39 (noise)
+sweep 7: 564 ms, mode=RX
+CAD detected on ch1
+False CAD on ch1 (noise)
+CAD detected on ch5
+False CAD on ch5 (noise)
+CAD detected on ch12
+False CAD on ch12 (noise)
+CAD detected on ch18
+Short preamble on ch18 (2 confirms) - data channel?
+CAD detected on ch19
+False CAD on ch19 (noise)
+CAD detected on ch29
+False CAD on ch29 (noise)
+CAD detected on ch42
+False CAD on ch42 (noise)
+sweep 8: 694 ms, mode=RX
+CAD detected on ch2
+False CAD on ch2 (noise)
+CAD detected on ch13
+False CAD on ch13 (noise)
+CAD detected on ch37
+False CAD on ch37 (noise)
+CAD detected on ch48
+False CAD on ch48 (noise)
+sweep 9: 500 ms, mode=RX
+CAD detected on ch31
+False CAD on ch31 (noise)
+CAD detected on ch42
+False CAD on ch42 (noise)
+sweep 10: 387 ms, mode=RX
+CAD detected on ch29
+False CAD on ch29 (noise)
+CAD detected on ch40
+False CAD on ch40 (noise)
+sweep 11: 405 ms, mode=RX
+CAD detected on ch6
+False CAD on ch6 (noise)
+CAD detected on ch9
+False CAD on ch9 (noise)
+CAD detected on ch19
+False CAD on ch19 (noise)
+CAD detected on ch20
+Short preamble on ch20 (1 confirms) - data channel?
+CAD detected on ch24
+False CAD on ch24 (noise)
+CAD detected on ch26
+False CAD on ch26 (noise)
+CAD detected on ch35
+False CAD on ch35 (noise)
+CAD detected on ch40
+False CAD on ch40 (noise)
+sweep 12: 813 ms, mode=RX
+CAD detected on ch15
+False CAD on ch15 (noise)
+CAD detected on ch46
+False CAD on ch46 (noise)
+sweep 13: 423 ms, mode=RX
+CAD detected on ch2
+False CAD on ch2 (noise)
+CAD detected on ch38
+False CAD on ch38 (noise)
+CAD detected on ch41
+Short preamble on ch41 (1 confirms) - data channel?
+sweep 14: 553 ms, mode=RX
+CAD detected on ch11
+False CAD on ch11 (noise)
+CAD detected on ch22
+False CAD on ch22 (noise)
+CAD detected on ch27
+False CAD on ch27 (noise)
+sweep 15: 455 ms, mode=RX
+CAD detected on ch1
+False CAD on ch1 (noise)
+CAD detected on ch12
+False CAD on ch12 (noise)
+CAD detected on ch42
+False CAD on ch42 (noise)
+sweep 16: 477 ms, mode=RX
+CAD detected on ch9
+False CAD on ch9 (noise)
+CAD detected on ch26
+Short preamble on ch26 (2 confirms) - data channel?
+CAD detected on ch37
+False CAD on ch37 (noise)
+sweep 17: 461 ms, mode=RX
+sweep 18: 282 ms, mode=RX
+CAD detected on ch0
+False CAD on ch0 (noise)
+CAD detected on ch43
+False CAD on ch43 (noise)
+sweep 19: 415 ms, mode=RX
+rxchar '?'
+Test stats: frames=0 dropped=0 dup=0 gaps=0 overflow=0/0
+  fifo_rx_irqs=1
+sweep 20: 309 ms, mode=RX
+sweep 21: 314 ms, mode=RX

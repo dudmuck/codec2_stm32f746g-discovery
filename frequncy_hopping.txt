@@ -1,0 +1,82 @@
+
+FCC part 15 rules require to use frequency hopping for bandwidths below 500KHz in the USA, but other countries have other rules.  We can made frequency hopping a build option.  The hopping rules are to hop randomly across 50 channels in the 902 to 928MHz band, and the signal cannot spill over these band edges.  when hopping, the radio can only sit on one channel for maximum of 400 milliseconds, then randomly select one of the other 50 channels.
+
+This would be a build option: i.e. -DENABLE_HOPPING=1
+
+Frequency hopping strategy, initial synchronization:
+Transmitter begins with an initial long preamble on a random radio channel, receiver sweeps the channels to find this preamble.  The duration of the transmitter's long preamble would be determined by how much time is required for the receiver to sweep over all 50 channels to detect this long preamble.
+
+The operations on receiver to set-up fast preamble detection: CAD is configured via SetLoraCadParams (0x0227)=lr20xx_radio_lora_configure_cad_params() in CAD_RX mode so the receiver gets the packet. SetLoraCAD (0x0228)=lr20xx_radio_lora_set_cad() starts the CAD detection. the interrupts generated are LR20XX_SYSTEM_IRQ_CAD_DONE and also LR20XX_SYSTEM_IRQ_CAD_DETECTED if a lora signal was found... The lr20xx_radio_common_set_rf_freq() can be sent to radio in RX mode, no need for standby mode to change frequency.  During CAD search the frequency can be sequentially swept from low to high, no randomness.
+
+See the details of SetLoraCadParams in /home/wroberts/tmp/rf/lr2021_documentation/LR2021_V1_1_datasheet.txt
+
+there is example CAD software at /home/wroberts/src/eugit1/smtc-trx-sdk/lr20xx/apps/cad/cad_types
+
+THis initial synchronization would likely need a separate test application to be created, (to not disturb the codec2 application) until we know how long the preamble needs to be. the procedure for this could be:
+A) use 125KHz bandwith to start
+B) define a radio channel plan, start frequency and step size (i.e. 200KHz steps for 125Khz bandwith)
+C) build the TX and RX sides for test
+D) determine the optimal configuration of lr20xx_radio_lora_cad_params_t for fast CAD detection, with the goal of keeping the transmitted preamble under the 400ms limit, allowing the receiver to sweep the 50 channels within the transmitted preamble duration.  lr20xx_radio_lora_cad_params_t options need to be adjusted to prevent missed preamble, but also prevent false CAD detection on background noise.
+E) the receivers CAD parameters would likely need to be controlled via UART interface, and transmitter side controlled via UART
+
+#################################################
+  UART Commands (when ENABLE_HOPPING=ON):
+
+  - H - Toggle FHSS enable
+  - h - Start/stop CAD scan
+  - s/S - FHSS status/statistics
+  - n - Hop to next random channel
+  - c - Print current channel
+  - 1-4 - Set CAD symbol count
+  - +/- - Adjust CAD detect_peak
+  - p - Toggle PNR delta (best-effort CAD)
+
+  Channel Plan:
+
+  - Channels: 50 (FCC Part 15 compliant)
+  - Base frequency: 902.2 MHz
+  - Channel spacing: 520 kHz
+  - End frequency: 927.7 MHz
+
+  This provides the foundation for FCC Part 15 frequency hopping. The next steps would be to:
+  1. Test CAD detection parameters with actual hardware
+  2. Implement the full TX sync (long preamble on random channel)
+  3. Implement RX sync sweep (CAD across all 50 channels)
+  4. Integrate with the codec2 streaming mode
+
+#######################################################################
+  TODO for FHSS + Codec2 Streaming:
+
+  1. Coordinated Hopping During Data
+    - Both TX and RX must hop to same channel at same time
+    - Need hop timing: every N packets or based on dwell time
+    - TX sends hop indication in packet or use implicit timing
+  2. Dwell Time Management
+    - 400ms max per channel
+    - At SF6/125kHz, packet ~32ms, so ~12 packets per channel max
+    - Need to track time on channel and trigger hop
+  3. Packet Format for Data
+    - Include sequence number for lost packet detection
+    - Include next channel hint (like sync packet) or use LFSR
+    - Codec2 frames + hop coordination overhead
+  4. RX Timeout / Resync
+    - If RX loses packets, how to resync?
+    - Option: Return to CAD scan mode after N missed packets
+    - Option: TX periodically sends sync packets
+  5. PTT Integration
+    - On PTT press: TX sends sync preamble, then data
+    - On PTT release: Signal end of transmission
+    - RX returns to scan mode when TX ends
+  6. Test Mode
+    - Start with test tone/pattern before live audio
+    - Verify continuous hopping works across channels
+
+RX Timeout / Resync: transmitter will only send initial long preamble packet on keyup.  If receiver gets RX timeouts, it will continue hopping for N channels even though getting RX timeouts instead of RxDone, then return to CAD scan mode to get a new keyup.
+
+  Next steps to integrate with codec2 streaming:
+  1. On PTT press: call fhss_start_tx_sync() to send sync packet
+  2. After sync TX done: call fhss_configure_data_mode(codec2_payload_len)
+  3. During voice: use fhss_send_data() instead of direct lorahal.send()
+  4. RX side: after sync received, configure data mode and use fhss_rx_data_packet() to extract codec2 payload
+
+can we continue with transmitter side: on ptt press call fhss_start_tx_sync(), then after sync sent call fhss_configure_data_mode(codec2_payload_len), then during voice fhss_send_data(), then later the RX side sync reception

@@ -1,0 +1,16 @@
+
+rxchar 'b'
+BW=406kHz SF10
+rxchar 'b'
+BW=250kHz SF11
+rxchar 'b'
+BW=203kHz SF12
+rxchar 'b'
+BW=125kHz SF12
+rxchar 'b'
+BW=102kHz SF12
+rxchar 'b'
+BW=83kHz SF12
+rxchar 'b'
+BW=63kHz SF12
+

@@ -1,0 +1,54 @@
+Hz SF6
+fhss_poll timeout
+rxchar 'b'
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=239 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=6, margin=121 ms
+BW=83kHz SF6
+fhss_poll timeout
+fhss_poll timeout
+rxchar 'b'
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=318 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=6, margin=42 ms
+BW=63kHz SF6
+fhss_poll timeout
+rxchar 'b'
+SF6 TOA=477ms margin=-117ms (min=10), reducing SF...
+Adjusted SF6->SF5 (TOA=258ms, margin=102ms)
+NOTE: TX faster than encoding, buffering full packet
+FHSS: proactive hop count = 1 (prod=360 ms, toa=258 ms)
+Streaming config: feasible=0, min_init=9 frames, rec_sf=5, margin=102 ms
+BW=42kHz SF5
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+rxchar 'T'
+Test mode ON
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+fhss_poll timeout
+rxchar '?'
+Test stats: frames=0 dropped=0 dup=0 gaps=0 overflow=0/0
+  fifo_rx_irqs=0
+fh
