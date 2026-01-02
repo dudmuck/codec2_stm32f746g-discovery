@@ -1233,8 +1233,7 @@ static void fhss_send_sync_repeat(void)
            fhss_cfg.tx_sync_count, FHSS_SYNC_REPEAT_COUNT, sync_channel, tx_hop_count);
 
     lorahal.loRaPacketConfig(fhss_cfg.preamble_len_symb, false, true, false, FHSS_SYNC_PKT_SIZE);
-    int ret = lorahal.send(FHSS_SYNC_PKT_SIZE);
-    printf("sync sent ret=%d\r\n", ret);
+    lorahal.send(FHSS_SYNC_PKT_SIZE);
 }
 
 /* Preamble length for re-sync packets during data mode.
@@ -1321,9 +1320,11 @@ void fhss_tx_done_handler(void)
         }
     } else if (fhss_cfg.state == FHSS_STATE_TX_DATA) {
         /* Data packet TX done - stay in TX_DATA state for next packet */
-    } else {
-        fhss_cfg.state = FHSS_STATE_IDLE;
+    } else if (fhss_cfg.state == FHSS_STATE_IDLE) {
+        /* Already IDLE - nothing to do */
     }
+    /* Note: RX states (RX_SCAN, RX_SYNC, RX_DATA) are not touched here.
+     * txDoneCB() may have started a scan before this handler runs. */
 }
 
 bool fhss_is_tx_sync(void)

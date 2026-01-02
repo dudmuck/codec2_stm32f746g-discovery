@@ -88,7 +88,6 @@ bool LR20xx_service()
         LR20xx_chipMode = stat.bits.chip_mode;
 
         if (irqFlags & LR20XX_SYSTEM_IRQ_TX_DONE) {
-            printf("TX_DONE IRQ flags=0x%08lX\r\n", (unsigned long)irqFlags);
             if (LR20xx_txDone)
                 LR20xx_txDone();
         }

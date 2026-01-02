@@ -42,8 +42,6 @@ volatile uint32_t stream_underflow_count = 0;
 
 void Radio_txDoneBottom()
 {
-    extern uint32_t HAL_GetTick(void);
-    printf("TxDoneBot t=%lu state=%u\r\n", HAL_GetTick(), stream_state);
     uint8_t tx_continuing = 0;  /* Flag: did we start next TX immediately? */
     streaming_tx_active = 0;
 

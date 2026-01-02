@@ -629,6 +629,62 @@ void start_tone()
     sine_out((rx_rssi+(rx_snr*4)) + 170);
 }
 
+/* Output a low-amplitude sine tone during FHSS sync transmission.
+ * Non-blocking: only fills buffer when DMA is ready.
+ * Returns 1 if tone was output, 0 if DMA not ready. */
+static unsigned sync_tone_table_idx = 0;
+static unsigned sync_tone_out_cnt = 0;
+static unsigned sync_tone_silence_cnt = 0;
+int sync_tone_out(void)
+{
+    short *outPtr = NULL;
+    /* Fixed step for ~500Hz tone at 8kHz sample rate:
+     * 8000/500 = 16 samples per cycle, 1024/16 = 64 step */
+    const unsigned step = 64;
+
+    /* Non-blocking: only output if DMA buffer ready */
+    if (audio_play_state_ == AUDIO_PLAY_FULL)
+        outPtr = (short*)audio_buffer_out_B;
+    else if (audio_play_state_ == AUDIO_PLAY_HALF)
+        outPtr = (short*)audio_buffer_out;
+    else
+        return 0;  /* DMA not ready */
+
+    audio_play_state_ = AUDIO_PLAY_NONE;
+    sync_tone_out_cnt++;
+
+    for (unsigned i = 0; i < audio_block_size; i++) {
+        int16_t out = (int16_t)(sine_table[sync_tone_table_idx] - 0x8000);
+        out /= 64;  /* Reduced amplitude (1/2 of normal sine_out) */
+
+        *outPtr++ = out;
+        *outPtr++ = out;
+
+        sync_tone_table_idx += step;
+        if (sync_tone_table_idx >= SINE_TABLE_LENGTH)
+            sync_tone_table_idx -= SINE_TABLE_LENGTH;
+    }
+    return 1;
+}
+
+/* Non-blocking silence - clear audio buffer when DMA ready.
+ * Call multiple times to ensure both halves are cleared. */
+int silence_nonblocking(void)
+{
+    short *outPtr = NULL;
+
+    if (audio_play_state_ == AUDIO_PLAY_FULL)
+        outPtr = (short*)audio_buffer_out_B;
+    else if (audio_play_state_ == AUDIO_PLAY_HALF)
+        outPtr = (short*)audio_buffer_out;
+    else
+        return 0;  /* DMA not ready */
+
+    audio_play_state_ = AUDIO_PLAY_NONE;
+    memset(outPtr, 0, audio_block_size * 2);  /* Clear stereo buffer */
+    return 1;
+}
+
 void silence()
 {
     short *outPtr = NULL;
@@ -1146,8 +1202,11 @@ void AudioLoopback_demo(void)
 #ifdef ENABLE_HOPPING
         /* Fast polling mode during CAD scan - skip slow LCD/touchscreen */
         if (fhss_is_scanning()) {
+            static uint8_t scan_dbg = 0;
+            if (!scan_dbg) { printf("main: scanning active\r\n"); scan_dbg = 1; }
             /* Check for PTT button or 't' command to switch to TX */
             if ((BSP_PB_GetState(BUTTON_KEY) == GPIO_PIN_SET) || uart_tx_active) {
+                scan_dbg = 0;
                 printf("FHSS: stopping scan for TX\r\n");
                 fhss_cfg.state = FHSS_STATE_IDLE;
                 lorahal.standby();
@@ -1196,8 +1255,9 @@ void AudioLoopback_demo(void)
                 if (fhss_cfg.enabled) {
                     /* Start FHSS: send sync packet first */
                     fhss_data_mode_configured = 0;
+                    sync_tone_table_idx = 0;  /* Reset sync tone phase */
+                    sync_tone_out_cnt = 0;    /* Reset debug counter */
                     fhss_start_tx_sync();
-                    printf("FHSS: sending sync packet\r\n");
                 }
 #endif
             }
@@ -1206,6 +1266,8 @@ void AudioLoopback_demo(void)
             /* FHSS: wait for sync TX to complete before encoding audio */
             if (fhss_cfg.enabled && fhss_is_tx_sync()) {
                 lorahal.service();
+                /* Play sync tone so user knows speech isn't being transmitted yet */
+                sync_tone_out();
                 goto skip_encode;  /* Skip audio encoding during sync TX */
             }
 
@@ -1213,7 +1275,13 @@ void AudioLoopback_demo(void)
             if (fhss_cfg.enabled && fhss_is_tx_data_ready() && !fhss_data_mode_configured) {
                 fhss_configure_data_mode(lora_payload_length);
                 fhss_data_mode_configured = 1;
-                printf("FHSS: data mode configured, payload=%u\r\n", lora_payload_length);
+                sync_tone_silence_cnt = 0;  /* Start silencing the tone */
+            }
+
+            /* Keep clearing audio buffer until both halves are silenced */
+            if (fhss_cfg.enabled && fhss_data_mode_configured && sync_tone_silence_cnt < 2) {
+                if (silence_nonblocking())
+                    sync_tone_silence_cnt++;
             }
 #endif
 
@@ -1363,7 +1431,6 @@ void AudioLoopback_demo(void)
                     if (fhss_is_tx_data_ready() && !txing &&
                         tx_buf_idx >= lora_payload_length) {
                         fhss_data_pkt_cnt++;
-                        printf("FHSS pkt#%lu\r\n", fhss_data_pkt_cnt);
                         tx_encoded(lora_payload_length);
                         tx_buf_idx = 0;
                         mid = 0;

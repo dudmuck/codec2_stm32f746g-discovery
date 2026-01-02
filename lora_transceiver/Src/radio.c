@@ -27,13 +27,21 @@ void radio_irq_callback()
 
 void txDoneCB()
 {
-    extern uint32_t HAL_GetTick(void);
-    printf("txDone t=%lu\r\n", HAL_GetTick());
     txing = 0;
     appHal.lcd_printOpMode(false);
     lcd_print_tx_duration((int)(tickAtIrq - txStartAt), (unsigned)cycleDur);
-    if (rx_start_at_tx_done) { 
-        lora_rx_begin();
+    if (rx_start_at_tx_done) {
+#ifdef ENABLE_HOPPING
+        /* Only start scan if FHSS TX is actually done (state is IDLE).
+         * During sync/data TX, txDoneCB fires for each packet but we shouldn't
+         * return to scanning until fhss_tx_stop() sets state to IDLE. */
+        if (fhss_cfg.enabled && fhss_cfg.state == FHSS_STATE_IDLE) {
+            fhss_start_scan();
+        } else if (!fhss_cfg.enabled)
+#endif
+        {
+            lora_rx_begin();
+        }
         rx_start_at_tx_done = 0;
     }
 }
