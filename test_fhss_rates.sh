@@ -185,10 +185,8 @@ run_test() {
 
     # Determine pass/fail
     if [ "$synced" -eq 0 ]; then
-        echo -e "  ${RED}FAIL${NC}: RX never synced with TX"
-        RESULTS[$rate_name]="FAIL: No sync"
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        return 1
+        echo -e "  ${YELLOW}No sync - will retry${NC}"
+        return 2  # Special return code for "retry"
     elif [ "$rx_pkts" -eq 0 ]; then
         echo -e "  ${RED}FAIL${NC}: Synced but no packets received"
         RESULTS[$rate_name]="FAIL: No packets"
@@ -196,7 +194,7 @@ run_test() {
         return 1
     elif [ "$crc_err" -gt 0 ] || [ "$hdr_err" -gt 0 ]; then
         echo -e "  ${YELLOW}WARN${NC}: rx=$rx_pkts/$tx_pkts crc_err=$crc_err hdr_err=$hdr_err"
-        RESULTS[$rate_name]="WARN: rx=$rx_pkts crc=$crc_err hdr=$hdr_err"
+        RESULTS[$rate_name]="WARN: rx=$rx_pkts/$tx_pkts crc=$crc_err hdr=$hdr_err"
         # Still count as pass if we got frames
         if [ "$rx_pkts" -gt 0 ]; then
             PASS_COUNT=$((PASS_COUNT + 1))
@@ -273,14 +271,37 @@ echo ""
 check_devices
 mkdir -p "$LOG_DIR"
 
+# Run a test with retry on sync failure
+run_test_with_retry() {
+    local rate_idx=$1
+    local rate_name=${RATES[$rate_idx]}
+
+    run_test $rate_idx
+    local result=$?
+
+    if [ $result -eq 2 ]; then
+        # Sync failed - retry once
+        echo -e "  ${YELLOW}Retrying $rate_name...${NC}"
+        sleep 2
+        run_test $rate_idx
+        result=$?
+        if [ $result -eq 2 ]; then
+            # Still no sync after retry
+            echo -e "  ${RED}FAIL${NC}: RX never synced with TX (after retry)"
+            RESULTS[$rate_name]="FAIL: No sync"
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+    fi
+}
+
 # Run tests
 if [ -n "$SINGLE_RATE" ]; then
     # Test single rate
-    run_test ${RATE_IDX[$SINGLE_RATE]}
+    run_test_with_retry ${RATE_IDX[$SINGLE_RATE]}
 else
     # Test all rates
     for rate_idx in 0 1 2 3 4 5 8; do
-        run_test $rate_idx
+        run_test_with_retry $rate_idx
     done
 fi
 

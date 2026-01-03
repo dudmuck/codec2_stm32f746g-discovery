@@ -44,6 +44,15 @@ static uint8_t tx_hop_count = 0;
  * 10 packets = ~1 second of audio at 100ms/packet. */
 #define FHSS_FIRST_DWELL_PKT_COUNT 10
 
+/* Initial wait period after sync (ms).
+ * RX should stay on the promised next_ch while TX finishes sync repeats.
+ * TX sends up to 3 sync repeats with ~350ms preamble each (~1050ms total).
+ * After syncs, TX starts data mode and sends 2-3 packets (~500ms) before hopping.
+ * Total time from first sync to TX hopping = ~1500ms max.
+ * Using 1500ms as the initial wait. If RX catches sync 3, TX is almost
+ * immediately on next_ch. If RX catches sync 1, TX needs ~1200ms for syncs. */
+#define FHSS_RX_INITIAL_WAIT_MS  1500
+
 /* Flag indicating TX should send re-sync packet before next data packet.
  * Set by fhss_hop() when hop_count reaches FHSS_RESYNC_HOP_INTERVAL. */
 static bool tx_resync_pending = false;
@@ -169,9 +178,11 @@ void fhss_set_proactive_hop_count(uint32_t production_time_ms, uint32_t pkt_toa_
     /* Take the minimum - TX is limited by whichever constraint hits first */
     uint8_t count = (count_by_prod < count_by_dwell) ? count_by_prod : count_by_dwell;
 
-    /* Minimum of 1, maximum of 10 */
+    /* Cap at 3 to handle packet loss - higher values risk RX falling behind TX.
+     * Don't subtract 1 as that would make count=2 become count=1, causing RX
+     * to hop after every packet while TX sends 2 per channel (breaks 1200/700C). */
     if (count < 1) count = 1;
-    if (count > 10) count = 10;
+    if (count > 3) count = 3;
 
     fhss_cfg.proactive_hop_count = count;
     printf("FHSS: proactive hop count = %u (prod=%lu ms, toa=%lu ms)\r\n",
@@ -267,7 +278,11 @@ uint32_t fhss_calc_cad_timeout_ms(uint8_t sf, uint16_t bw_khz)
  *
  * NOTE: Must use standbyXosc() not standby() for fast restart - STBY_RC requires
  * XOSC warmup (~5ms) which would lose preamble lock. STBY_XOSC is ~100us. */
-#define CAD_VERIFY_TIMEOUT_MS   50    /* Initial short timeout */
+/* CAD verify timeout: After CAD detection, wait this long for first preamble confirm.
+ * Shorter = faster false CAD recovery, but might miss weak preambles.
+ * With 50 channels and 350ms preamble, we need fast recovery to sweep all channels.
+ * SF8/125kHz: symbol time = 2ms, 8 symbols for CAD confirm = 16ms minimum */
+#define CAD_VERIFY_TIMEOUT_MS   25    /* Initial short timeout */
 #define CAD_EXTENDED_TIMEOUT_MS 400   /* Extended timeout after preamble confirmed */
 
 /* Calculate timeout for sync packet reception.
@@ -323,13 +338,13 @@ void fhss_configure_cad(const fhss_cad_config_t *cfg)
     cad_params.pnr_delta = cfg->pnr_delta;
     cad_params.cad_detect_peak = fhss_cfg.cad_cfg.cad_detect_peak;
 
-    /* CAD_ONLY mode: return to standby after CAD, we manually start RX
-     * with appropriate timeout based on whether it's a real signal or not.
-     * This allows short timeout for false CAD and long timeout for real packets. */
-    cad_params.cad_exit_mode = LR20XX_RADIO_LORA_CAD_EXIT_MODE_STANDBYRC;
+    /* CAD exit to RX mode: on CAD detection, radio automatically enters RX.
+     * The cad_timeout_in_pll_step becomes the RX timeout.
+     * This avoids XOSC warmup delay and preamble lock loss. */
+    cad_params.cad_exit_mode = LR20XX_RADIO_LORA_CAD_EXIT_MODE_RX;
 
-    /* Timeout not used in STBY exit mode, but set it anyway */
-    cad_params.cad_timeout_in_pll_step = (fhss_cfg.cad_cfg.cad_timeout_ms * 1000) / 31;
+    /* RX timeout after CAD detection - must cover remaining preamble + sync packet */
+    cad_params.cad_timeout_in_pll_step = (CAD_EXTENDED_TIMEOUT_MS * 1000) / 31;
     if (cad_params.cad_timeout_in_pll_step > 0x00FFFFFF)
         cad_params.cad_timeout_in_pll_step = 0x00FFFFFF;
 
@@ -383,23 +398,21 @@ void fhss_cad_done_handler(bool detected)
 
     if (detected) {
         fhss_cfg.stats.cad_detected_count++;
-        /* Don't print here - delays RX start by ~5ms. Print after RX completes. */
 
         if (fhss_cfg.state == FHSS_STATE_RX_SCAN) {
-            /* Found signal during scan - switch to sync state and start RX.
-             * Using CAD_ONLY mode (standby exit), so we manually start RX.
-             *
-             * Use SHORT initial timeout to quickly detect false CAD.
-             * If preamble is confirmed multiple times, we'll extend timeout. */
+            /* Found signal during scan - switch to sync state.
+             * With CAD_EXIT_MODE_RX, radio is already in RX mode with
+             * CAD_EXTENDED_TIMEOUT_MS timeout - no need to call rx(). */
             fhss_cfg.state = FHSS_STATE_RX_SYNC;
             fhss_cfg.preamble_confirm_count = 0;
-            printf("CAD detected on ch%u\r\n", fhss_cfg.current_channel);
 
-            /* Start RX with short timeout (convert ms to µs) */
+            /* Record start time for timeout tracking */
             extern uint32_t HAL_GetTick(void);
             cad_rx_start_ms = HAL_GetTick();
-            lorahal.rx(CAD_VERIFY_TIMEOUT_MS * 1000);
-            /* Don't print - we're now receiving, any delay could cause sync loss */
+
+            /* Radio should be in RX mode (CAD_EXIT_MODE_RX) */
+            printf("CAD detected on ch%u, mode=%s\r\n", fhss_cfg.current_channel,
+                   chip_mode_name(chip_mode));
         }
     } else {
         /* No detection - continue scanning if in scan mode */
@@ -440,12 +453,9 @@ void fhss_preamble_detected_handler(void)
         }
 #endif
 
-        /* On first preamble confirmation, extend the RX timeout.
-         * Use standbyXosc() for fast transition to avoid losing preamble lock. */
-        if (fhss_cfg.preamble_confirm_count == 1) {
-            lorahal.standbyXosc();
-            lorahal.rx(CAD_EXTENDED_TIMEOUT_MS * 1000);
-        }
+        /* With extended timeout used directly in CAD handler, no need to
+         * restart RX here - that would interrupt ongoing reception.
+         * Just track preamble confirmations for debugging. */
     }
 }
 
@@ -631,9 +641,13 @@ bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size)
                sync_pkt->next_channel, FHSS_NUM_CHANNELS - 1);
         return false;
     }
-    if (sync_pkt->hop_count > 100) {
-        /* hop_count > 100 is implausible (~40 seconds of transmission) */
-        printf("FHSS: Invalid hop_count %u\r\n", sync_pkt->hop_count);
+
+    /* Since resync is disabled, TX always sends initial sync with hop_count=0.
+     * Any non-zero hop_count indicates corruption (likely image frequency).
+     * This catches the case where packet data is subtly wrong but CRC passes. */
+    if (sync_pkt->hop_count != 0) {
+        printf("FHSS: Rejecting sync with hop_count=%u (expected 0)\r\n",
+               sync_pkt->hop_count);
         return false;
     }
 
@@ -720,11 +734,11 @@ void fhss_configure_data_mode(uint8_t payload_len)
     if (fhss_cfg.state != FHSS_STATE_TX_DATA) {
         extern volatile uint8_t terminate_spkr_rx;
         fhss_cfg.dwell_start_ms = 0;  /* RX: timer starts on first packet */
-        /* Set a long initial timeout (2 seconds) to cover TX sync repeats.
+        /* Set initial timeout to cover TX sync repeats.
          * RX must wait for TX to finish sync repeats and start data.
          * The first data packet reception will reset this to normal timeout.
          * Clear terminate_spkr_rx AFTER setting timeout to prevent races. */
-        terminate_spkr_at_tick = HAL_GetTick() + 2000;  /* 2 sec initial wait */
+        terminate_spkr_at_tick = HAL_GetTick() + FHSS_RX_INITIAL_WAIT_MS;
         terminate_spkr_rx = 0;       /* Clear any stale flag */
     }
     fhss_cfg.pkts_on_channel = 0;
@@ -806,7 +820,9 @@ void fhss_check_hop(void)
 
     uint32_t dwell_time = now - fhss_cfg.dwell_start_ms;
 
-    /* TX hops at 90% of max dwell time to stay within regulatory limits */
+    /* FCC Part 15.247 REQUIRES hopping within 400ms - this is non-negotiable.
+     * The first channel extended dwell only applies to packet counting,
+     * not to the regulatory dwell time limit. */
     if (dwell_time >= (FHSS_MAX_DWELL_MS * 9 / 10)) {
         uint8_t old_ch = fhss_cfg.current_channel;
 
@@ -877,7 +893,8 @@ int fhss_send_data(const uint8_t *data, uint8_t len)
         }
     }
 
-    /* Check if we're near hop boundary and should defer this packet */
+    /* Check if we're near hop boundary and should defer this packet.
+     * FCC Part 15.247 REQUIRES hopping within 400ms - no exceptions. */
     if (fhss_cfg.state == FHSS_STATE_TX_DATA && fhss_cfg.dwell_start_ms > 0) {
         uint32_t dwell_time = now - fhss_cfg.dwell_start_ms;
         uint32_t defer_threshold = (FHSS_MAX_DWELL_MS * FHSS_TX_DEFER_THRESHOLD_PCT) / 100;
@@ -1106,9 +1123,19 @@ int fhss_rx_data_packet(const uint8_t *data, uint8_t size)
     /* Reset consecutive timeout counter on successful reception */
     fhss_cfg.rx_timeout_consec = 0;
 
-    /* Clear any pending timeout flag - we just received a valid packet.
-     * This prevents a stale timeout from triggering a hop. */
+    /* Reset the timeout timer - we just received a valid packet.
+     * This is critical: terminate_spkr_at_tick was set to sync_time + 2000ms
+     * in fhss_configure_data_mode(). Without resetting it here, that initial
+     * timeout would fire even after receiving data, causing premature hop.
+     * Set to 80% of dwell time (same as main loop does after packet complete). */
+    extern volatile uint32_t terminate_spkr_at_tick;
     extern volatile uint8_t terminate_spkr_rx;
+    extern uint32_t HAL_GetTick(void);
+    uint32_t now = HAL_GetTick();
+    printf("FHSS: pkt %u on ch%u seq=%u, now=%lu timeout=%lu->%lu\r\n",
+           fhss_cfg.pkts_on_channel, hdr->channel, hdr->seq_num,
+           now, terminate_spkr_at_tick, now + (FHSS_MAX_DWELL_MS * 8 / 10));
+    terminate_spkr_at_tick = now + (FHSS_MAX_DWELL_MS * 8 / 10);
     terminate_spkr_rx = 0;
 
     /* Return payload length (excluding header) */
@@ -1129,22 +1156,23 @@ void fhss_rx_data(void)
      * - fhss_configure_data_mode(): for FIRST data packet after sync
      * - lora_xcvr.c line 1522: for subsequent packets after processing */
 
-    /* Only start RX if not already in RX mode.
-     * Calling SetRx while in RX causes CMD_STATUS_FAIL. */
+    /* Always restart RX after receiving a packet.
+     * After RX_DONE, the radio is in standby, so we must restart RX.
+     * Clear any pending IRQs first to avoid stale timeout triggers. */
     extern lr20xx_system_chip_modes_t LR20xx_chipMode;
     int prev_mode = LR20xx_chipMode;
-    if (prev_mode != LR20XX_SYSTEM_CHIP_MODE_RX) {
-        lorahal.rx(0);
-    }
-}
 
-/* Initial wait period after sync (ms).
- * RX should stay on the promised next_ch while TX finishes sync repeats.
- * TX sends up to 3 sync repeats with ~350ms preamble each (~1050ms total).
- * Plus fhss_configure_data_mode() sets a 2000ms initial RX timeout.
- * First timeout arrives ~2000ms after sync, so we need >2000ms wait.
- * Use 3000ms to provide margin for TX sync completion. */
-#define FHSS_RX_INITIAL_WAIT_MS  3000
+    /* Clear pending IRQs before restarting RX */
+    lr20xx_system_irq_mask_t pending_irqs;
+    lr20xx_system_get_and_clear_irq_status(NULL, &pending_irqs);
+    if (pending_irqs)
+        printf("FHSS: rx_data ch%u cleared IRQs=0x%08X\r\n",
+               fhss_cfg.current_channel, (unsigned)pending_irqs);
+
+    lorahal.standbyXosc();
+    lr20xx_radio_fifo_clear_rx(NULL);
+    lorahal.rx(0);
+}
 
 void fhss_rx_data_timeout_handler(void)
 {
@@ -1162,11 +1190,14 @@ void fhss_rx_data_timeout_handler(void)
     /* Check if we're still in the initial wait period after sync.
      * During this time, TX is still sending sync repeats on random channels,
      * then will hop to the promised next_ch and start data.
-     * RX should NOT hop during this period - stay on next_ch and wait. */
+     * RX should NOT hop during this period - stay on next_ch and wait.
+     *
+     * HOWEVER: if we've already received ANY data packets in this session
+     * (rx_seq_num > 0), then TX has started data mode. End the wait.
+     * Note: pkts_on_channel resets on hop, but rx_seq_num persists. */
     uint32_t since_sync = now - fhss_cfg.rx_sync_achieved_ms;
-    printf("DEBUG: now=%lu sync_ms=%lu since=%lu\r\n", now, fhss_cfg.rx_sync_achieved_ms, since_sync);
-    if (since_sync < FHSS_RX_INITIAL_WAIT_MS) {
-        /* Still in initial wait - don't hop, just restart RX on same channel */
+    if (since_sync < FHSS_RX_INITIAL_WAIT_MS && fhss_cfg.rx_seq_num == 0) {
+        /* Still in initial wait and no data received - don't hop, just restart RX */
         printf("FHSS: RX timeout (wait %lu/%u ms), staying on ch%u\r\n",
                since_sync, FHSS_RX_INITIAL_WAIT_MS, fhss_cfg.current_channel);
         fhss_cfg.rx_timeout_consec = 0;  /* Reset since we're deliberately waiting */
@@ -1179,21 +1210,57 @@ void fhss_rx_data_timeout_handler(void)
     }
 
     if (fhss_cfg.rx_timeout_consec < FHSS_RX_TIMEOUT_MAX) {
-        /* Continue hopping - TX might still be transmitting */
-        uint8_t old_ch = fhss_cfg.current_channel;
+        /* Check if we should stay on this channel or hop.
+         * TX sends proactive_hop_count packets per channel before hopping.
+         * If we haven't received that many, TX is probably still on this channel.
+         * Only hop if:
+         * 1. We've received proactive_hop_count packets (TX will also hop), OR
+         * 2. We've had 2+ timeouts on same channel (missed packets, try to catch up)
+         *
+         * Use pkts_on_channel to estimate per-channel timeouts:
+         * If pkts_on_channel > 0, we received some packets, so this is first timeout.
+         * If pkts_on_channel == 0, we haven't received any on this channel yet. */
+        uint8_t expected_pkts = fhss_cfg.proactive_hop_count;
+        bool should_hop = false;
 
-        /* Ensure standby before changing frequency */
-        lorahal.standby();
-        lr20xx_radio_fifo_clear_rx(NULL);
+        if (fhss_cfg.pkts_on_channel >= expected_pkts) {
+            /* Received enough packets - TX should also be hopping */
+            should_hop = true;
+        } else if (fhss_cfg.pkts_on_channel == 0) {
+            /* No packets received on this channel - maybe we're out of sync.
+             * Hop to try catching up. */
+            should_hop = true;
+        } else if (fhss_cfg.rx_timeout_consec >= 2) {
+            /* Received some packets but 2+ timeouts now - TX has likely hopped.
+             * Don't wait forever, hop to try catching up. */
+            should_hop = true;
+        }
+        /* else: received some but not all expected packets, first timeout - stay and wait */
 
-        fhss_hop();
-        fhss_cfg.pkts_on_channel = 0;
-        printf("FHSS: RX timeout %u/%u, hop ch%u->ch%u\r\n",
-               fhss_cfg.rx_timeout_consec, FHSS_RX_TIMEOUT_MAX,
-               old_ch, fhss_cfg.current_channel);
+        if (should_hop) {
+            /* Hop to next channel */
+            uint8_t old_ch = fhss_cfg.current_channel;
 
-        /* Restart RX on new channel */
-        lorahal.rx(0);
+            /* Ensure standby before changing frequency */
+            lorahal.standby();
+            lr20xx_radio_fifo_clear_rx(NULL);
+
+            fhss_hop();
+            fhss_cfg.pkts_on_channel = 0;
+            printf("FHSS: RX timeout %u/%u, hop ch%u->ch%u\r\n",
+                   fhss_cfg.rx_timeout_consec, FHSS_RX_TIMEOUT_MAX,
+                   old_ch, fhss_cfg.current_channel);
+
+            /* Restart RX on new channel */
+            lorahal.rx(0);
+        } else {
+            /* Stay on current channel - TX probably still here */
+            printf("FHSS: RX timeout on ch%u (pkts=%u/%u), staying\r\n",
+                   fhss_cfg.current_channel, fhss_cfg.pkts_on_channel, expected_pkts);
+            lorahal.standbyXosc();
+            lr20xx_radio_fifo_clear_rx(NULL);
+            lorahal.rx(0);
+        }
     } else {
         /* Too many consecutive timeouts - TX probably stopped */
         printf("FHSS: %u consecutive timeouts, returning to CAD scan\r\n",
@@ -1209,6 +1276,75 @@ void fhss_rx_data_timeout_handler(void)
         /* Return to CAD scan to find next sync preamble */
         fhss_start_scan();
     }
+}
+
+void fhss_rx_error_handler(bool crc_error, bool len_error, bool hdr_error, float rssi, float snr)
+{
+    /* Track stats */
+    if (crc_error)
+        fhss_cfg.stats.cad_false_count++;  /* Reuse false_count for CRC errors */
+
+    /* Handle based on current state */
+    if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
+        /* CRC error during sync - restart scan immediately.
+         * This is faster than waiting for fhss_poll timeout (500ms). */
+        printf("FHSS: RX error during sync (crc=%d len=%d hdr=%d), restarting scan\r\n",
+               crc_error, len_error, hdr_error);
+        fhss_start_scan();
+    } else if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+        /* CRC error during data mode.
+         * Check SNR to distinguish real TX packets from noise/image frequency:
+         * - Real packets have SNR > 0 dB (typically +10 to +20 dB)
+         * - Noise/image has SNR < 0 dB (typically -10 to -15 dB)
+         * Only count real packets toward pkts_on_channel to avoid premature hop. */
+        bool is_real_packet = (snr > 0.0f);
+
+        if (is_real_packet) {
+            /* Real packet with CRC error - TX is transmitting on this channel.
+             * Count it and decide whether to hop. */
+            fhss_cfg.rx_timeout_consec++;
+            fhss_cfg.pkts_on_channel++;
+
+            uint8_t expected_pkts = fhss_cfg.proactive_hop_count;
+            if (fhss_cfg.pkts_on_channel >= expected_pkts) {
+                /* Received enough (good+bad) packets - TX should hop now */
+                printf("FHSS: RX CRC error on ch%u (pkts=%u/%u, snr=%.1f), hopping\r\n",
+                       fhss_cfg.current_channel, fhss_cfg.pkts_on_channel, expected_pkts, snr);
+                lorahal.standby();
+                fhss_hop();
+                fhss_cfg.pkts_on_channel = 0;
+                lorahal.rx(0);
+            } else {
+                /* More packets expected on this channel - stay */
+                printf("FHSS: RX CRC error on ch%u (pkts=%u/%u, snr=%.1f), staying\r\n",
+                       fhss_cfg.current_channel, fhss_cfg.pkts_on_channel, expected_pkts, snr);
+                lorahal.standbyXosc();
+                lr20xx_radio_fifo_clear_rx(NULL);
+                lorahal.rx(0);
+            }
+        } else {
+            /* Weak signal (noise or image frequency) - don't count as packet.
+             * Just restart RX and continue waiting. */
+            printf("FHSS: RX noise/image on ch%u (snr=%.1f), ignoring\r\n",
+                   fhss_cfg.current_channel, snr);
+            lorahal.standbyXosc();
+            lr20xx_radio_fifo_clear_rx(NULL);
+            lorahal.rx(0);
+            return;  /* Don't check timeout threshold for noise */
+        }
+
+        /* Check for too many consecutive errors */
+        if (fhss_cfg.rx_timeout_consec >= FHSS_RX_TIMEOUT_MAX) {
+            printf("FHSS: Too many errors (%u), returning to scan\r\n",
+                   fhss_cfg.rx_timeout_consec);
+            fhss_cfg.stats.resync_count++;
+            fhss_cfg.rx_timeout_consec = 0;
+            extern void end_rx_tone(void);
+            end_rx_tone();
+            fhss_start_scan();
+        }
+    }
+    /* Ignore errors in other states */
 }
 
 /* Send another sync packet on a new channel (for repeat mechanism).
@@ -1381,7 +1517,9 @@ uint16_t fhss_calc_sync_preamble_len(uint8_t sf, uint16_t bw_khz)
     /* Add 50% margin for reliability */
     total_us = total_us * 3 / 2;
 
-    /* Ensure under 400ms dwell limit (leave 50ms headroom for packet TX) */
+    /* FCC Part 15.247 limits transmission on any single channel to 400ms.
+     * This applies to sync preambles too. Cap at 350ms to leave headroom
+     * for the sync packet that follows the preamble. */
     if (total_us > (FHSS_MAX_DWELL_MS * 1000 - 50000))
         total_us = FHSS_MAX_DWELL_MS * 1000 - 50000;
 

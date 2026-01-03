@@ -90,9 +90,11 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
 #ifdef ENABLE_HOPPING
     /* Check if this is an FHSS sync packet */
     if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
-        /* Reject sync packets with poor signal quality (likely noise/false detect).
-         * SF8 can decode at SNR down to about -10dB, so use -10.5 as threshold. */
-        if (snr < -10.5f || rssi < -115.0f) {
+        /* Reject sync packets with very poor signal quality (likely noise).
+         * SF8 can decode at SNR down to about -10dB, so use -10.5 as threshold.
+         * RSSI threshold relaxed to -100dBm to allow marginal signals.
+         * Content validation (marker, channel range) catches corrupted packets. */
+        if (snr < -10.5f || rssi < -100.0f) {
             printf("FHSS: rejecting weak sync (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
             /* Resume scanning */
             fhss_start_scan();
@@ -217,6 +219,7 @@ static void Init_lr20xx(const RadioEvents_t* e)
 #ifdef ENABLE_HOPPING
     LR20xx_cadDone = fhss_cad_done_handler;
     LR20xx_preambleDetected = fhss_preamble_detected_handler;
+    LR20xx_rxError = fhss_rx_error_handler;
 #endif
  
     RadioEvents = e;

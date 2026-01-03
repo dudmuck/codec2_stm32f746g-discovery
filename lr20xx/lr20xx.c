@@ -14,6 +14,7 @@ void (*LR20xx_dio8_topHalf)(void);
 void (*LR20xx_timeout)(bool tx);
 void (*LR20xx_txDone)(void);
 void (*LR20xx_rxDone)(uint8_t size, float rssi, float snr);
+void (*LR20xx_rxError)(bool crc_error, bool len_error, bool hdr_error, float rssi, float snr);
 void (*LR20xx_chipModeChange)(void);
 void (*LR20xx_cadDone)(bool detected);
 void (*LR20xx_preambleDetected)(void);
@@ -99,9 +100,24 @@ bool LR20xx_service()
         }
 
         if (irqFlags & LR20XX_SYSTEM_IRQ_RX_DONE) {
-            if (!(irqFlags & LR20XX_SYSTEM_IRQ_CRC_ERROR) &&
-                !(irqFlags & LR20XX_SYSTEM_IRQ_LEN_ERROR) &&
-                !(irqFlags & LR20XX_SYSTEM_IRQ_LORA_HEADER_ERROR)) {
+            bool crc_err = (irqFlags & LR20XX_SYSTEM_IRQ_CRC_ERROR) != 0;
+            bool len_err = (irqFlags & LR20XX_SYSTEM_IRQ_LEN_ERROR) != 0;
+            bool hdr_err = (irqFlags & LR20XX_SYSTEM_IRQ_LORA_HEADER_ERROR) != 0;
+
+            if (crc_err || len_err || hdr_err) {
+                /* Get packet status for debugging - RSSI/SNR still available with CRC error */
+                lr20xx_radio_lora_packet_status_t pkt_status = { 0 };
+                lr20xx_radio_lora_get_packet_status(NULL, &pkt_status);
+                float rssi = pkt_status.rssi_pkt_in_dbm - (pkt_status.rssi_pkt_half_dbm_count * 0.5f);
+                float snr = pkt_status.snr_pkt_raw / 4.0f;
+                printf("RX error: crc=%d len=%d hdr=%d rssi=%.1f snr=%.1f\r\n",
+                       crc_err, len_err, hdr_err, rssi, snr);
+
+                /* Notify FHSS of RX error so it can restart scan immediately */
+                if (LR20xx_rxError)
+                    LR20xx_rxError(crc_err, len_err, hdr_err, rssi, snr);
+                lr20xx_radio_fifo_clear_rx(NULL);
+            } else {
                 uint16_t size;
                 ASSERT_LR20XX_RC( lr20xx_radio_common_get_rx_packet_length(NULL, &size) );
                 if (size <= LR20XX_BUF_SIZE) {

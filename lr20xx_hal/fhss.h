@@ -203,6 +203,11 @@ void fhss_rx_data(void);
  * Continues hopping for N channels, then returns to CAD scan */
 void fhss_rx_data_timeout_handler(void);
 
+/* Handle RX error (CRC, length, or header error)
+ * Restarts scan immediately instead of waiting for poll timeout
+ * rssi/snr: signal quality - used to filter noise from real packets */
+void fhss_rx_error_handler(bool crc_error, bool len_error, bool hdr_error, float rssi, float snr);
+
 /* Check if FHSS is in TX sync (preamble) mode */
 bool fhss_is_tx_sync(void);
 

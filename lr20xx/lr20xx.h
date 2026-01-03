@@ -43,6 +43,7 @@ extern void (*LR20xx_dio8_topHalf)(void);
 extern void (*LR20xx_timeout)(bool tx);
 extern void (*LR20xx_txDone)(void);
 extern void (*LR20xx_rxDone)(uint8_t size, float rssi, float snr);
+extern void (*LR20xx_rxError)(bool crc_error, bool len_error, bool hdr_error, float rssi, float snr);
 extern void (*LR20xx_chipModeChange)(void);
 extern void (*LR20xx_cadDone)(bool detected);
 extern void (*LR20xx_preambleDetected)(void);
