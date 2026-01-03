@@ -32,6 +32,7 @@ typedef struct __attribute__((packed)) {
     uint16_t lfsr_state;       /* Current LFSR state for channel hopping */
     uint8_t  next_channel;     /* Next channel TX will hop to */
     uint8_t  hop_count;        /* Number of hops since LFSR state - RX fast-forwards */
+    uint8_t  sync_channel;     /* Channel TX is sending on - for ACK response */
 } fhss_sync_pkt_t;
 
 #define FHSS_SYNC_PKT_SIZE      sizeof(fhss_sync_pkt_t)
@@ -49,10 +50,23 @@ typedef struct __attribute__((packed)) {
 #define FHSS_DATA_HDR_SIZE      sizeof(fhss_data_hdr_t)
 #define FHSS_DATA_PREAMBLE_LEN  8   /* Short preamble for data packets */
 
-/* Number of sync packets to send before data mode.
- * Multiple syncs give RX more chances to catch sync if stuck on false CAD.
- * Each sync is on a different random channel. */
+/* Sync ACK packet - sent by RX to confirm sync reception (explicit header mode)
+ * Contains the channel RX received sync on, to detect image frequency reception */
+#define FHSS_ACK_MARKER         0xCC
+typedef struct __attribute__((packed)) {
+    uint8_t  marker;           /* ACK marker (0xCC) */
+    uint8_t  rx_channel;       /* Channel RX received sync on */
+} fhss_ack_pkt_t;
+
+#define FHSS_ACK_PKT_SIZE       sizeof(fhss_ack_pkt_t)
+#define FHSS_ACK_TIMEOUT_MS     200    /* Time to wait for ACK - ~100ms typical, 200ms with margin */
+#define FHSS_ACK_PREAMBLE_LEN   8      /* Short preamble - TX already in RX mode via auto-TX/RX */
+
+/* Number of sync packets sent (without ACK mode) */
 #define FHSS_SYNC_REPEAT_COUNT  3
+
+/* Maximum sync attempts before giving up (with ACK mode) */
+#define FHSS_SYNC_MAX_ATTEMPTS  10
 
 /* Channel plan for 902-928 MHz band with 125kHz bandwidth
  * Channel spacing: 520kHz (26MHz / 50 channels)
@@ -77,9 +91,11 @@ typedef struct {
 typedef enum {
     FHSS_STATE_IDLE,           /* Not hopping */
     FHSS_STATE_TX_PREAMBLE,    /* TX: Sending long preamble for sync */
+    FHSS_STATE_TX_WAIT_ACK,    /* TX: Waiting for ACK from RX after sync */
     FHSS_STATE_TX_DATA,        /* TX: Sending data packets */
     FHSS_STATE_RX_SCAN,        /* RX: CAD scanning for preamble */
     FHSS_STATE_RX_SYNC,        /* RX: Found preamble, receiving packet */
+    FHSS_STATE_RX_SEND_ACK,    /* RX: Sending ACK after receiving sync */
     FHSS_STATE_RX_DATA,        /* RX: Synchronized, receiving data */
 } fhss_state_t;
 
@@ -117,9 +133,25 @@ typedef struct {
     uint32_t rx_sync_achieved_ms; /* Timestamp when sync was achieved (for initial wait) */
     bool     rx_first_dwell;      /* RX: first dwell after sync (extended threshold) */
     uint8_t  preamble_confirm_count; /* Preamble confirmations during RX_SYNC */
+    uint8_t  tx_sync_channel;     /* Channel TX sent sync on (for ACK verification) */
+    uint8_t  rx_sync_channel;     /* Channel RX received sync on (included in ACK) */
+    uint8_t  sync_attempts;       /* Number of sync attempts (with ACK mode) */
+    uint32_t ack_wait_start_ms;   /* Timestamp when started waiting for ACK */
+    bool     ack_received;        /* Flag: ACK received from RX */
+    bool     ack_mode_enabled;    /* Flag: use ACK-based sync (vs blind repeat) */
     fhss_cad_config_t cad_cfg;    /* CAD configuration */
     fhss_state_t state;           /* Current state */
     fhss_stats_t stats;           /* Statistics */
+    /* Deferred print info - to minimize RX restart delay */
+    struct {
+        uint8_t  pkts_on_ch;
+        uint8_t  channel;
+        uint8_t  seq_num;
+        uint32_t now;
+        uint32_t old_timeout;
+        uint32_t new_timeout;
+        uint8_t  valid;
+    } last_pkt_info;
 } fhss_config_t;
 
 /* Global FHSS configuration */
@@ -165,6 +197,19 @@ void fhss_tx_done_handler(void);
  * Returns true if valid sync packet, false otherwise */
 bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size);
 
+/* Send ACK after receiving sync (called by RX) */
+void fhss_send_sync_ack(void);
+
+/* Process received ACK packet (called by TX)
+ * Returns true if valid ACK, false otherwise */
+bool fhss_rx_ack_packet(const uint8_t *data, uint8_t size);
+
+/* Handle ACK timeout (TX didn't receive ACK, send another sync) */
+void fhss_ack_timeout_handler(void);
+
+/* Enable/disable ACK-based sync mode */
+void fhss_set_ack_mode(bool enabled);
+
 /* Get current LFSR state (for debugging/display) */
 uint16_t fhss_get_lfsr_state(void);
 
@@ -198,6 +243,9 @@ void fhss_check_hop(void);
 
 /* Start RX for next data packet on current or next channel */
 void fhss_rx_data(void);
+
+/* Print deferred packet info - call AFTER fhss_rx_data() to minimize RX gap */
+void fhss_rx_data_print(void);
 
 /* Handle RX timeout during data mode
  * Continues hopping for N channels, then returns to CAD scan */

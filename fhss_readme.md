@@ -46,21 +46,20 @@ This implementation provides FCC Part 15.247 compliant frequency hopping for cod
 
 ## Timing Constraints
 
-The FCC 400ms dwell limit combined with packet TOA determines how many packets can be sent per channel:
+FCC Part 15.247 limits **transmit time** to 400ms per channel, not wall-clock time. The device can stay on a channel indefinitely; only actual TX counts toward the limit.
 
 ```
-Packets per channel = floor(340ms / Production_Time) + 1
+Packets per channel = floor(400ms / Packet_TOA)
 ```
 
-Where 340ms = 85% of 400ms (defer threshold to ensure hop completes before limit).
+For 700C/1400 with 175ms TOA: floor(400/175) = 2 packets per channel.
 
-### Why 700C/1400/1200 Are Challenging
+### Proactive Hopping
 
-With only 2 packets per ~340ms dwell:
-- TX sends packet 0, packet 1, then hops
-- If RX misses packet 0 (due to sync delay), it only has 1 chance left
-- If RX processing takes >175ms, it may miss packet 1 entirely
-- Once out of sync, RX must return to CAD scanning
+TX and RX use synchronized LFSR-based pseudo-random hopping:
+- TX hops after sending `proactive_hop_count` packets
+- RX tracks packet count and proactively hops to match TX
+- Both use the same LFSR sequence, so they stay synchronized
 
 ## Channel Plan
 
@@ -72,32 +71,60 @@ With only 2 packets per ~340ms dwell:
 
 ## Synchronization
 
-1. **TX Sync Phase**: Sends 3 sync packets on random channels with long preamble (171 symbols, ~350ms)
+### Basic Mode (default)
+1. **TX Sync Phase**: Sends 3 sync packets on different channels with long preamble (171 symbols, ~350ms)
 2. **RX Scan**: CAD sweeps all 50 channels looking for preamble
-3. **Sync Packet**: Contains LFSR state and next data channel
+3. **Sync Packet**: Contains LFSR state, next data channel, and hop count
 4. **Data Phase**: Both sides hop using synchronized LFSR
+
+### ACK Mode (default)
+Enabled by default. Use 'a' command to disable if needed.
+
+1. **TX Sync**: Sends sync packet with long preamble, then auto-switches to RX to wait for ACK
+2. **RX Scan**: CAD sweeps channels, detects sync, sends ACK back to TX
+3. **ACK Timeout**: If TX doesn't receive ACK within 200ms, retries on a different channel (up to 10 attempts)
+4. **Data Phase**: Once ACK received, both sides transition to synchronized data mode
+
+ACK mode provides reliable sync establishment even with image frequency reception or packet loss. The retry mechanism uses deterministic channel selection to avoid LFSR desynchronization.
 
 ## Known Issues
 
 ### Image Frequency Reception
-RX sometimes detects sync packets on image frequencies (wrong channel but correct data). This can cause channel misalignment. Mitigation: SNR-based filtering ignores weak signals (SNR < 0 dB).
+RX sometimes detects sync packets on image frequencies (wrong channel but correct data). The sync packet now includes `sync_channel` so RX knows where TX is actually transmitting. Mitigation: SNR-based filtering ignores weak signals (SNR < 0 dB).
 
 ### Late Sync
-If RX syncs late in the sync phase, TX may have already hopped away from the first data channel. RX will timeout and attempt to catch up by hopping.
+If RX syncs late in the sync phase, TX may have already hopped away from the first data channel. RX will timeout and attempt to catch up by hopping. ACK mode eliminates this issue by ensuring TX waits for RX confirmation.
+
+### LFSR Synchronization (Fixed)
+Previously, ACK timeout retries called `fhss_random_channel()` which advanced the LFSR, causing TX and RX to hop to different channels. Fixed by using deterministic channel selection for retries: `(tx_next_channel + sync_attempts * 17) % 50`.
 
 ## Test Results
 
-Typical results with 15-second test duration:
+### With ACK Mode (15-second test, recommended)
+
+| Mode | TX Pkts | RX Pkts | Lost | CRC Err | Status |
+|------|---------|---------|------|---------|--------|
+| 3200 | 96 | 97 | 0 | 0 | PASS |
+| 2400 | 118 | 120 | 0 | 1 | PASS |
+| 1600 | 38 | 39 | 0 | 0 | PASS |
+| 1400 | 52 | 53 | 0 | 0 | PASS |
+| 1300 | 72 | 73 | 0 | 0 | PASS |
+| 1200 | 61 | 62 | 0 | 0 | PASS |
+| 700C | 21 | 23 | 0 | 1 | PASS |
+
+*RX count includes ACK packet. All modes achieve 0 lost packets with ACK mode enabled.*
+
+### Without ACK Mode
 
 | Mode | Status | Notes |
 |------|--------|-------|
 | 3200 | PASS | High reliability |
 | 2400 | PASS | High reliability |
 | 1600 | PASS | Most reliable (hop every packet) |
-| 1400 | PASS/WARN | May have occasional CRC errors |
+| 1400 | PASS/WARN | May have occasional sync issues |
 | 1300 | PASS | High reliability |
 | 1200 | PASS/WARN | May have occasional sync issues |
-| 700C | WARN | Most challenging, occasional packet loss |
+| 700C | WARN | Sync timing sensitive, use ACK mode |
 
 ## Configuration
 
@@ -107,12 +134,26 @@ FHSS is enabled by default. Key parameters in `fhss.h`:
 #define FHSS_NUM_CHANNELS       50
 #define FHSS_MAX_DWELL_MS       400
 #define FHSS_RX_TIMEOUT_MAX     3    // Timeouts before rescan
-#define FHSS_SYNC_REPEAT_COUNT  3    // Sync packets sent
+#define FHSS_SYNC_REPEAT_COUNT  3    // Sync packets sent (basic mode)
+#define FHSS_SYNC_MAX_ATTEMPTS  10   // Max sync retries (ACK mode)
+#define FHSS_ACK_TIMEOUT_MS     200  // ACK wait timeout
 ```
+
+### UART Commands
+
+| Command | Description |
+|---------|-------------|
+| `A` | Enable ACK mode |
+| `a` | Disable ACK mode |
+| `H` | Enable FHSS and start CAD scan |
+| `h` | Disable FHSS |
+| `t` | Start TX (PTT) |
+| `r` | Stop TX |
+| `T` | Enable test mode (tone output) |
 
 ## Files
 
 - `lr20xx_hal/fhss.c` - FHSS state machine and hopping logic
 - `lr20xx_hal/fhss.h` - Configuration and API
-- `test_fhss.sh` - Single rate test script
-- `test_fhss_rates.sh` - All rates test script
+- `test_fhss.sh` - Single rate test script (usage: `./test_fhss.sh [duration] [rate] [delay_ms] [ack]`)
+- `test_fhss_rates.sh` - All rates test script (usage: `./test_fhss_rates.sh [duration] [delay_ms] [ack]`)
