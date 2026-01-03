@@ -60,6 +60,8 @@ variables in main.c:
 
 ## LoRa operation with codec2
 
+This section covers single-channel 500kHz operation. For FCC Part 15.247 compliant frequency hopping across 50 channels in the 902-928 MHz band, see **[FHSS Documentation](fhss_readme.md)**.
+
 ### Codec2 mode parameters
 
 | codec2 mode | samples/frame | frame period (ms) | encoded bytes/frame | frames/sec |
