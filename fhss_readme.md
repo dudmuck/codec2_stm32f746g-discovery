@@ -11,17 +11,18 @@ This implementation provides FCC Part 15.247 compliant frequency hopping for cod
 
 ## Codec2 Rate Summary
 
-| Mode | Frames/Pkt | Bytes/Pkt | SF | TOA (ms) | Prod Time (ms) | Hop Count | Audio/Pkt (ms) |
-|------|------------|-----------|-----|----------|----------------|-----------|----------------|
-| 3200 | 6 | 48 | 7 | 93 | 120 | 3 | 240 |
-| 2400 | 6 | 36 | 7* | 78 | 120 | 3 | 240 |
-| 1600 | 9 | 72 | 8* | 226 | 360 | 1 | 360 |
-| 1400 | 7 | 49 | 8* | 175 | 280 | 2 | 280 |
-| 1300 | 2 | 26 | 7 | 62 | 80 | 3 | 80 |
-| 1200 | 6 | 36 | 8* | 134 | 240 | 2 | 240 |
-| 700C | 7 | 49 | 8* | 175 | 280 | 2 | 280 |
+| Mode | Frames/Pkt | Bytes/Pkt | SF | TOA (ms) | Prod Time (ms) | Hop Count | Audio/Pkt (ms) | Sensitivity |
+|------|------------|-----------|-----|----------|----------------|-----------|----------------|-------------|
+| 3200 | 6 | 48 | 7 | 93 | 120 | 3 | 240 | -127.5 dBm |
+| 2400 | 6 | 36 | 7* | 78 | 120 | 3 | 240 | -127.5 dBm |
+| 1600 | 9 | 72 | 8* | 226 | 360 | 1 | 360 | -130.5 dBm |
+| 1400 | 7 | 49 | 8* | 175 | 280 | 2 | 280 | -130.5 dBm |
+| 1300 | 2 | 26 | 7 | 62 | 80 | 3 | 80 | -127.5 dBm |
+| 1200 | 6 | 36 | 8* | 134 | 240 | 2 | 240 | -130.5 dBm |
+| 700C | 7 | 49 | 8* | 175 | 280 | 2 | 280 | -130.5 dBm |
 
 *SF adjusted down automatically to ensure TOA < Production Time
+Sensitivity: LR2021 @ 125kHz BW, 1% PER, 64B payload (from datasheet Table 3-17)
 
 ### Column Definitions
 
@@ -70,6 +71,8 @@ TX and RX use synchronized LFSR-based pseudo-random hopping:
 - **Bandwidth**: 125 kHz
 
 ## Synchronization
+
+![FHSS Sync Sequence](fhss_flow-3.png)
 
 ### Basic Mode (default)
 1. **TX Sync Phase**: Sends 3 sync packets on different channels with long preamble (171 symbols, ~350ms)
