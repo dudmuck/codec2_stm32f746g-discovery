@@ -179,4 +179,13 @@ Press 'T' via serial to enable test mode, which sends sequence numbers instead o
 
 The test script `test_radio_link.sh` automates testing across all codec2 rates.
 
+### FHSS (Frequency Hopping)
+
+For FCC Part 15.247 compliant frequency hopping spread spectrum operation, see the `lr20xx_fhss` branch. This adds:
+- 50-channel hopping in the 902-928 MHz ISM band
+- LFSR-based pseudo-random hopping pattern
+- ACK-based synchronization for reliable link establishment
+- Proactive hop coordination between TX and RX
+
+See [fhss_readme.md](https://github.com/dudmuck/codec2_stm32f746g-discovery/blob/lr20xx_fhss/fhss_readme.md) for documentation.
 
