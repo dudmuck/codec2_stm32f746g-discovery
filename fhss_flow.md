@@ -134,21 +134,27 @@ flowchart LR
 ## Packet Structure
 
 ```
-Sync Packet (long preamble ~350ms):
-┌──────────┬──────────┬──────────┬──────────┬──────────┐
-│ sync_ch  │ next_ch  │ lfsr_hi  │ lfsr_lo  │ hop_cnt  │
-│ (1 byte) │ (1 byte) │ (1 byte) │ (1 byte) │ (1 byte) │
-└──────────┴──────────┴──────────┴──────────┴──────────┘
+Sync Packet (6 bytes, explicit header, long preamble ~350ms):
+┌──────────┬───────────────────┬──────────┬──────────┬──────────┐
+│ marker   │ lfsr_state        │ next_ch  │ hop_cnt  │ sync_ch  │
+│ 0xAA     │ (2 bytes, LE)     │ (1 byte) │ (1 byte) │ (1 byte) │
+└──────────┴───────────────────┴──────────┴──────────┴──────────┘
 
-Data Packet:
+Data Packet (implicit header, 3-byte header + payload):
 ┌──────────┬──────────┬──────────┬─────────────────────┐
-│ pkt_type │ seq_num  │ hop_cnt  │ codec2 frames       │
-│ (1 byte) │ (1 byte) │ (1 byte) │ (N bytes)           │
+│ marker   │ seq_num  │ channel  │ codec2 frames       │
+│ 0x55     │ (1 byte) │ (1 byte) │ (N bytes)           │
 └──────────┴──────────┴──────────┴─────────────────────┘
 
-End Packet:
-┌──────────┬──────────┬──────────┐
-│ 0xFF     │ 0x00...  │ padding  │
-│ (marker) │          │          │
-└──────────┴──────────┴──────────┘
+ACK Packet (2 bytes, explicit header):
+┌──────────┬──────────┐
+│ marker   │ rx_ch    │
+│ 0xCC     │ (1 byte) │
+└──────────┴──────────┘
+
+End Packet (implicit header, same length as data):
+┌──────────┬───────────────────┐
+│ marker   │ padding (zeros)   │
+│ 0xEE     │                   │
+└──────────┴───────────────────┘
 ```

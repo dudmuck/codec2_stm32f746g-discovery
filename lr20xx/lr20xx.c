@@ -73,6 +73,11 @@ void LR20xx_setStandby(lr20xx_system_standby_mode_t sm)
 	LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_STBY_RC;
 }
 
+bool dio8_read(void)
+{
+    return DIO8;
+}
+
 bool LR20xx_service()
 {
 
@@ -113,10 +118,12 @@ bool LR20xx_service()
                 printf("RX error: crc=%d len=%d hdr=%d rssi=%.1f snr=%.1f\r\n",
                        crc_err, len_err, hdr_err, rssi, snr);
 
+                /* Clear FIFO before notifying callback - callback may restart RX */
+                lr20xx_radio_fifo_clear_rx(NULL);
+
                 /* Notify FHSS of RX error so it can restart scan immediately */
                 if (LR20xx_rxError)
                     LR20xx_rxError(crc_err, len_err, hdr_err, rssi, snr);
-                lr20xx_radio_fifo_clear_rx(NULL);
             } else {
                 uint16_t size;
                 ASSERT_LR20XX_RC( lr20xx_radio_common_get_rx_packet_length(NULL, &size) );

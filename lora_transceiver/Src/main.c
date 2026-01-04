@@ -362,6 +362,10 @@ int main(void)
         Touchscreen_DrawBackground(false, 0, 0);
     }
 
+    /* Initialize audio output with volume 0 to prevent noise during rate selection.
+     * Full audio init happens later in lora_xcvr() after codec2 rate is selected. */
+    BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE, 0, I2S_AUDIOFREQ_16K);
+
     while (c2 == NULL) {
         uint16_t x, y;
         /* Check UART for rate selection: '0'-'5' or '8' */
@@ -699,9 +703,9 @@ void lcd_print_rssi_snr(float rssi, float snr)
 {
     char str[24];
     if (rssi == 0 && snr == 0)
-        sprintf(str, "                  ");
+        sprintf(str, "                      ");
     else
-        sprintf(str, "%.1fdBm %.1fdB", (double)rssi, (double)snr);
+        sprintf(str, "ch%02u %ddBm %ddB", fhss_cfg.current_channel, (int)rssi, (int)snr);
 
     BSP_LCD_SetFont(&Font24);
     BSP_LCD_SetBackColor(LCD_COLOR_WHITE);

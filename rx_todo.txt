@@ -1,6 +1,0 @@
-Reducing receiver latency: adding FIFO flow on the RX side.  This permits early decoding of received radio packet. 
-1) add LR20XX_SYSTEM_IRQ_FIFO_RX to irq_mask for lr20xx_system_set_dio_irq_cfg()
-2) in main() enable LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH for RX flags at lr20xx_radio_fifo_cfg_irq(), and set the threshold value for RX at 3rd argument.  Also add LR20XX_RADIO_FIFO_FLAG_OVERFLOW to detect failure condition.
-3) LR20xx_service() service LR20XX_SYSTEM_IRQ_FIFO_RX as was done before for IRQ_FIFO_TX, just use rx_fifo_flags for LR20xx_fifoRX() callback.
-4) received frames can be send to codec2 decoder on the 1st or 2nd received frame? Since the lora data rate is fater than codec2 rate, the frames would be received faster than decoding.
-

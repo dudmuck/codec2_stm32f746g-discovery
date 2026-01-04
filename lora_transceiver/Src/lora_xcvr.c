@@ -421,6 +421,7 @@ void svc_uart()
                rxchar == 'n' || rxchar == 'c' || rxchar == 'p' ||
                rxchar == '+' || rxchar == '-' ||
                rxchar == 'P' || rxchar == 'L' || rxchar == 'l' ||
+               rxchar == 'A' || rxchar == 'a' ||  /* ACK mode enable/disable */
                (rxchar >= '1' && rxchar <= '4')) {
         /* FHSS commands */
         fhss_uart_command(rxchar);
@@ -439,6 +440,7 @@ void svc_uart()
         printf("  H: toggle FHSS enable\r\n");
         printf("  h: start/stop CAD scan (RX)\r\n");
         printf("  P: toggle continuous preamble TX\r\n");
+        printf("  A/a: ACK-based sync enable/disable\r\n");
         printf("  L/l: adjust preamble length +/-16\r\n");
         printf("  i/I: FHSS status/stats\r\n");
         printf("  n: hop to next random channel\r\n");
@@ -546,6 +548,8 @@ void decimated_encode(const short *in, uint8_t *out)
 
 void tx_encoded(uint8_t tx_nbytes)
 {
+    printf("E");  /* Super short debug to avoid serial overflow */
+
     lorahal.service();
 
     if (txing) {
@@ -557,12 +561,23 @@ void tx_encoded(uint8_t tx_nbytes)
     txStartAt = uwTick;
 
 #ifdef ENABLE_HOPPING
-    if (fhss_cfg.enabled && fhss_is_tx_data_ready()) {
-        /* FHSS mode: send data packet with automatic hopping */
-        if (fhss_send_data(lorahal.tx_buf, tx_nbytes) != 0) {
-            printf("\e[31mFHSS send error\e[0m\r\n");
+    {
+        static uint8_t tx_enc_dbg = 0;
+        if (tx_enc_dbg < 5) {
+            tx_enc_dbg++;
+            printf("tx_enc: enabled=%d ready=%d state=%d\r\n",
+                   fhss_cfg.enabled, fhss_is_tx_data_ready(), fhss_cfg.state);
         }
-        appHal.lcd_printOpMode(true);
+    }
+    if (fhss_cfg.enabled) {
+        if (fhss_is_tx_data_ready()) {
+            /* FHSS mode: send data packet with automatic hopping */
+            if (fhss_send_data(lorahal.tx_buf, tx_nbytes) != 0) {
+                printf("\e[31mFHSS send error\e[0m\r\n");
+            }
+            appHal.lcd_printOpMode(true);
+        }
+        /* FHSS enabled but not ready - don't fall through to non-FHSS TX */
         return;
     }
 #endif
@@ -589,7 +604,17 @@ void lora_rx_begin()
     extern volatile uint16_t rx_fifo_read_idx;
     extern volatile uint16_t rx_decode_idx;
     rx_fifo_read_idx = 0;
+#ifdef ENABLE_HOPPING
+    /* When FHSS is transitioning from sync/ACK to data mode, preserve
+     * the rx_decode_idx set by fhss to prevent streaming_rx_decode()
+     * from triggering with stale indices (stream_start idx=0 bug). */
+    if (!fhss_cfg.enabled || fhss_cfg.state == FHSS_STATE_IDLE ||
+        fhss_cfg.state == FHSS_STATE_RX_SCAN) {
+        rx_decode_idx = 0;
+    }
+#else
     rx_decode_idx = 0;
+#endif
 #endif
     lorahal.rx(0);
     appHal.lcd_printOpMode(false);

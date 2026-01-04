@@ -2,6 +2,7 @@
 #include "main.h"
 #include "radio.h"
 #include "lr20xx.h"
+#include "fhss.h"
 #include "stm32746g_discovery_lcd.h"
 
 static void lcd_print_lr20xx_opmode(bool tx_wait)
@@ -15,19 +16,20 @@ static void lcd_print_lr20xx_opmode(bool tx_wait)
 		case 1: // STBY_RC
 		case 2: // STBY_XOSC
 		case 3: // FS
-			modeStr = "   ";
+			modeStr = "       ";  /* 7 spaces to clear "chNN TX" */
 			BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
 			BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
 			break;
 		case 4: // RX
 			BSP_LCD_SetBackColor(LCD_COLOR_GREEN);
 			BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
-			modeStr = "RX";
+			modeStr = "RX     ";  /* Pad to 7 chars */
 			break;
 		case 5: // TX
 			BSP_LCD_SetBackColor(LCD_COLOR_RED);
 			BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
-			modeStr = "TX";
+			sprintf(str, "ch%02u TX", fhss_cfg.current_channel);
+			modeStr = str;
 			break;
 		default:
 			BSP_LCD_SetBackColor(LCD_COLOR_WHITE);

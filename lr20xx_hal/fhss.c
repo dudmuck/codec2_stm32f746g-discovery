@@ -375,7 +375,27 @@ void fhss_configure_cad(const fhss_cad_config_t *cfg)
 
 void fhss_start_cad(void)
 {
-    lr20xx_radio_lora_set_cad(NULL);
+    extern lr20xx_system_chip_modes_t LR20xx_chipMode;
+    lr20xx_status_t rc;
+    lr20xx_system_irq_mask_t irq_status;
+
+    /* Ensure we're in STBY_XOSC for CAD (faster PLL lock) */
+    lorahal.standbyXosc();
+
+    /* Clear any pending IRQs before starting CAD */
+    lr20xx_system_get_and_clear_irq_status(NULL, &irq_status);
+    if (irq_status != 0) {
+        printf("fhss_start_cad: cleared pending irq=0x%lx\r\n", (unsigned long)irq_status);
+    }
+
+    /* Update our tracking from the SPI response */
+    extern lr20xx_stat_t stat;
+    LR20xx_chipMode = stat.bits.chip_mode;
+
+    rc = lr20xx_radio_lora_set_cad(NULL);
+    if (rc != LR20XX_STATUS_OK) {
+        printf("fhss_start_cad: FAILED rc=%d\r\n", rc);
+    }
 }
 
 static const char* chip_mode_name(uint8_t mode)
@@ -406,6 +426,14 @@ void fhss_cad_done_handler(bool detected)
              * CAD_EXTENDED_TIMEOUT_MS timeout - no need to call rx(). */
             fhss_cfg.state = FHSS_STATE_RX_SYNC;
             fhss_cfg.preamble_confirm_count = 0;
+
+            /* Check and clear any stale RX FIFO data before receiving sync packet */
+            uint16_t fifo_level = 0;
+            lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level);
+            if (fifo_level > 0) {
+                printf("CAD: stale RX FIFO data (%u bytes), clearing\r\n", fifo_level);
+                lr20xx_radio_fifo_clear_rx(NULL);
+            }
 
             /* Record start time for timeout tracking */
             extern uint32_t HAL_GetTick(void);
@@ -739,6 +767,14 @@ bool fhss_rx_sync_packet(const uint8_t *data, uint8_t size)
      * RX should stay on this channel while TX finishes sync repeats. */
     extern uint32_t HAL_GetTick(void);
     fhss_cfg.rx_sync_achieved_ms = HAL_GetTick();
+
+    /* Reset streaming RX indices IMMEDIATELY to prevent streaming_rx_decode()
+     * from running with stale indices while we process sync/send ACK.
+     * This prevents premature stream_start with idx=0. */
+    extern volatile uint16_t rx_fifo_read_idx;
+    extern volatile uint16_t rx_decode_idx;
+    rx_fifo_read_idx = 0;
+    rx_decode_idx = FHSS_DATA_HDR_SIZE;  /* Skip FHSS header when decoding */
 
     if (fhss_cfg.ack_mode_enabled) {
         /* ACK mode: transition to send ACK state.
@@ -1178,6 +1214,25 @@ int fhss_rx_data_packet(const uint8_t *data, uint8_t size)
         return -1;  /* Not a data packet */
     }
 
+    /* Check for end-of-transmission packet */
+    if (hdr->marker == FHSS_END_MARKER) {
+        extern volatile uint16_t rx_fifo_read_idx;
+        extern void end_rx_tone(void);
+
+        printf("FHSS: end packet received, stopping audio\r\n");
+
+        /* Stop audio immediately */
+        end_rx_tone();
+
+        /* Return to CAD scan */
+        fhss_cfg.state = FHSS_STATE_IDLE;
+        fhss_start_scan();
+
+        /* Clear rx_fifo_read_idx - end packet has no audio data */
+        rx_fifo_read_idx = 0;
+        return -1;  /* Not a data packet */
+    }
+
     if (hdr->marker != FHSS_DATA_MARKER) {
         /* Not a data packet and not a sync packet - garbage.
          * Clear rx_fifo_read_idx to prevent main loop from decoding garbage. */
@@ -1491,55 +1546,56 @@ void fhss_rx_error_handler(bool crc_error, bool len_error, bool hdr_error, float
         fhss_start_scan();
     } else if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
         /* CRC error during data mode.
-         * Check SNR to distinguish real TX packets from noise/image frequency:
-         * - Real packets have SNR > 0 dB (typically +10 to +20 dB)
-         * - Noise/image has SNR < 0 dB (typically -10 to -15 dB)
-         * Only count real packets toward pkts_on_channel to avoid premature hop. */
-        bool is_real_packet = (snr > 0.0f);
+         * Use RSSI to distinguish real TX packets from noise:
+         * - Real packets have strong RSSI (typically -40 to -60 dBm at short range)
+         * - Noise near sensitivity has weak RSSI (below -90 dBm)
+         * Don't use SNR - near sensitivity, real packets can have SNR below -10dB.
+         * RSSI threshold of -80 dBm provides good margin. */
+        bool is_real_packet = (rssi >= -80.0f);
 
-        if (is_real_packet) {
-            /* Real packet with CRC error - TX is transmitting on this channel.
-             * Count it and decide whether to hop. */
-            fhss_cfg.rx_timeout_consec++;
-            fhss_cfg.pkts_on_channel++;
-
-            uint8_t expected_pkts = fhss_cfg.proactive_hop_count;
-            if (fhss_cfg.pkts_on_channel >= expected_pkts) {
-                /* Received enough (good+bad) packets - TX should hop now */
-                printf("FHSS: RX CRC error on ch%u (pkts=%u/%u, snr=%.1f), hopping\r\n",
-                       fhss_cfg.current_channel, fhss_cfg.pkts_on_channel, expected_pkts, snr);
-                lorahal.standbyXosc();
-                fhss_hop();
-                fhss_cfg.pkts_on_channel = 0;
-                lorahal.rx(0);
-            } else {
-                /* More packets expected on this channel - stay */
-                printf("FHSS: RX CRC error on ch%u (pkts=%u/%u, snr=%.1f), staying\r\n",
-                       fhss_cfg.current_channel, fhss_cfg.pkts_on_channel, expected_pkts, snr);
-                lorahal.standbyXosc();
-                lr20xx_radio_fifo_clear_rx(NULL);
-                lorahal.rx(0);
-            }
-        } else {
-            /* Weak signal (noise or image frequency) - don't count as packet.
-             * Just restart RX and continue waiting. */
-            printf("FHSS: RX noise/image on ch%u (snr=%.1f), ignoring\r\n",
-                   fhss_cfg.current_channel, snr);
+        if (!is_real_packet) {
+            /* Weak signal (noise) - don't count as packet, just restart RX */
+            uint8_t ch = fhss_cfg.current_channel;
             lorahal.standbyXosc();
-            lr20xx_radio_fifo_clear_rx(NULL);
             lorahal.rx(0);
-            return;  /* Don't check timeout threshold for noise */
+            printf("FHSS: RX noise on ch%u (rssi=%.1f, snr=%.1f), ignoring\r\n", ch, rssi, snr);
+            return;
         }
 
-        /* Check for too many consecutive errors */
-        if (fhss_cfg.rx_timeout_consec >= FHSS_RX_TIMEOUT_MAX) {
-            printf("FHSS: Too many errors (%u), returning to scan\r\n",
-                   fhss_cfg.rx_timeout_consec);
-            fhss_cfg.stats.resync_count++;
-            fhss_cfg.rx_timeout_consec = 0;
-            extern void end_rx_tone(void);
-            end_rx_tone();
-            fhss_start_scan();
+        /* Real packet with CRC error - TX is transmitting on this channel.
+         * Count toward pkts_on_channel to maintain hop sync with TX.
+         * Reset timeout counter AND extend deadline so RX waits for next packet.
+         * Also clear terminate_spkr_rx in case the old deadline already passed. */
+        extern uint32_t HAL_GetTick(void);
+        extern volatile uint32_t terminate_spkr_at_tick;
+        extern volatile uint8_t terminate_spkr_rx;
+        fhss_cfg.rx_timeout_consec = 0;
+        terminate_spkr_rx = 0;
+        terminate_spkr_at_tick = HAL_GetTick() + (FHSS_MAX_DWELL_MS * 8 / 10);
+        fhss_cfg.pkts_on_channel++;
+
+        uint8_t expected_pkts = fhss_cfg.proactive_hop_count;
+        uint8_t ch = fhss_cfg.current_channel;
+        uint8_t pkts = fhss_cfg.pkts_on_channel;
+
+        if (fhss_cfg.pkts_on_channel >= expected_pkts) {
+            /* Received enough (good+bad) packets - TX should hop now.
+             * Restart RX FIRST on new channel, then print.
+             * NOTE: lr20xx.c already cleared FIFO before calling us. */
+            lorahal.standbyXosc();
+            fhss_hop();
+            fhss_cfg.pkts_on_channel = 0;
+            lorahal.rx(0);
+            printf("FHSS: RX CRC error on ch%u (pkts=%u/%u, snr=%.1f), hopped\r\n",
+                   ch, pkts, expected_pkts, snr);
+        } else {
+            /* More packets expected on this channel - stay.
+             * Restart RX FIRST, then print.
+             * NOTE: lr20xx.c already cleared FIFO before calling us. */
+            lorahal.standbyXosc();
+            lorahal.rx(0);
+            printf("FHSS: RX CRC error on ch%u (pkts=%u/%u, snr=%.1f), staying\r\n",
+                   ch, pkts, expected_pkts, snr);
         }
     }
     /* Ignore errors in other states */
@@ -1703,13 +1759,119 @@ bool fhss_is_tx_data_ready(void)
     return fhss_cfg.state == FHSS_STATE_TX_DATA;
 }
 
+/* Helper to wait for TX to complete.
+ * Polls service() for IRQ_TX_DONE which updates LR20xx_chipMode. */
+static void wait_for_tx_complete(void)
+{
+    extern lr20xx_system_chip_modes_t LR20xx_chipMode;
+    extern uint32_t HAL_GetTick(void);
+    uint32_t wait_start = HAL_GetTick();
+
+    while (LR20xx_chipMode == LR20XX_SYSTEM_CHIP_MODE_TX) {
+        lorahal.service();
+        if (HAL_GetTick() - wait_start > 200) {
+            /* Timeout - force standby */
+            lorahal.standby();
+            LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_STBY_RC;
+            break;
+        }
+    }
+}
+
+void fhss_send_end_packet(void)
+{
+    /* Send end-of-transmission marker to RX.
+     * Uses same packet length as data packets (implicit header mode).
+     * RX checks first byte (marker) to identify packet type.
+     *
+     * TIMING CRITICAL: RX timeout is 320ms after last packet.
+     * If we've sent proactive_hop_count packets on current channel,
+     * RX has ALREADY hopped to the next channel. Sending end on
+     * current channel is useless and wastes 268ms (TX + wait).
+     *
+     * Strategy:
+     * - If pkts_on_channel >= proactive_hop_count: RX has hopped, skip current
+     *   channel and send on next 2 channels. Total time ~268ms < 320ms timeout.
+     * - If pkts_on_channel < proactive_hop_count: RX is still here, send on
+     *   current + next channel. */
+    if (fhss_cfg.state != FHSS_STATE_TX_DATA) {
+        return;  /* Only send if we were in data mode */
+    }
+
+    /* Build end packet - same length as data packet for implicit mode compatibility */
+    memset(lorahal.tx_buf, 0, fhss_cfg.data_pkt_len);
+    lorahal.tx_buf[0] = FHSS_END_MARKER;
+
+    /* Wait for any in-progress TX to complete */
+    wait_for_tx_complete();
+
+    uint8_t first_ch = fhss_cfg.current_channel;
+
+    /* Check if RX has likely already hopped */
+    if (fhss_cfg.pkts_on_channel >= fhss_cfg.proactive_hop_count) {
+        /* RX has already hopped to next channel - send end there.
+         * IMPORTANT: Don't hop again after first end! RX stays on that
+         * channel for 320ms (timeout). If we hop and send on next channel,
+         * RX won't be there yet.
+         * Send twice on same channel in case first is lost to noise. */
+        fhss_hop();
+        uint8_t rx_channel = fhss_cfg.current_channel;
+        printf("FHSS: end on ch%u (skipped ch%u, RX hopped)\r\n",
+               rx_channel, first_ch);
+        lorahal.send(fhss_cfg.data_pkt_len);
+        wait_for_tx_complete();
+
+        /* Delay to let RX restart after processing first end packet.
+         * RX needs ~5-10ms to handle CRC error IRQ and restart.
+         * Preamble is 8 symbols = ~16ms at SF8, so 20ms delay ensures
+         * RX catches most of the second packet's preamble. */
+        extern void HAL_Delay(uint32_t);
+        HAL_Delay(20);
+
+        /* Send again on same channel in case RX was processing noise */
+        printf("FHSS: end on ch%u (repeat)\r\n", rx_channel);
+        lorahal.send(fhss_cfg.data_pkt_len);
+        wait_for_tx_complete();
+
+        printf("FHSS: end packets sent on ch%u (x2)\r\n", rx_channel);
+    } else {
+        /* RX is still on current channel - send twice here.
+         * Don't hop to next channel because RX won't be there yet.
+         * RX is waiting for more packets on this channel. */
+        printf("FHSS: end on ch%u\r\n", first_ch);
+        lorahal.send(fhss_cfg.data_pkt_len);
+        wait_for_tx_complete();
+
+        /* Delay to let RX restart after processing first end packet */
+        extern void HAL_Delay(uint32_t);
+        HAL_Delay(20);
+
+        /* Send again on same channel in case first is lost to noise */
+        printf("FHSS: end on ch%u (repeat)\r\n", first_ch);
+        lorahal.send(fhss_cfg.data_pkt_len);
+        wait_for_tx_complete();
+
+        printf("FHSS: end packets sent on ch%u (x2)\r\n", first_ch);
+    }
+}
+
 void fhss_tx_stop(void)
 {
     if (fhss_cfg.state == FHSS_STATE_TX_PREAMBLE ||
-        fhss_cfg.state == FHSS_STATE_TX_DATA) {
+        fhss_cfg.state == FHSS_STATE_TX_DATA ||
+        fhss_cfg.state == FHSS_STATE_TX_WAIT_ACK) {
+
+        /* Send end packet to RX so it can stop audio immediately */
+        if (fhss_cfg.state == FHSS_STATE_TX_DATA) {
+            fhss_send_end_packet();
+        }
+
         printf("FHSS: TX stopped (data_cnt=%lu)\r\n", fhss_send_data_cnt);
         fhss_cfg.state = FHSS_STATE_IDLE;
         fhss_send_data_cnt = 0;
+
+        /* Return to CAD scan after TX stops */
+        fhss_start_scan();
     }
 }
 
@@ -1976,7 +2138,9 @@ bool fhss_poll(void)
 
         /* Safety timeout - if radio IRQ didn't fire, force return to scanning */
         if (HAL_GetTick() > timeout) {
-            printf("fhss_poll timeout\r\n");
+            extern lr20xx_system_chip_modes_t LR20xx_chipMode;
+            printf("fhss_poll timeout: state=%d chipMode=%d ch_scanned=%lu\r\n",
+                   fhss_cfg.state, LR20xx_chipMode, fhss_cfg.stats.channels_scanned);
             if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
                 printf("fhss_poll: forcing return to scan from RX_SYNC\r\n");
                 /* Restart scan (also prints RX stats) */

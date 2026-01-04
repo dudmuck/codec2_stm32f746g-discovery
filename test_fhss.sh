@@ -1,11 +1,13 @@
 #!/bin/bash
 # Simple FHSS test script
-# Usage: ./test_fhss.sh [duration_seconds] [extra_commands] [delay_before_tx_ms]
+# Usage: ./test_fhss.sh [duration_seconds] [rate] [delay_before_tx_ms] [options]
 #
 # Examples:
-#   ./test_fhss.sh           # 10 second test
-#   ./test_fhss.sh 5         # 5 second test
-#   ./test_fhss.sh 10 "" 1000  # 10 second test, 1000ms delay before TX
+#   ./test_fhss.sh              # 10 second test, rate 3200
+#   ./test_fhss.sh 5            # 5 second test
+#   ./test_fhss.sh 10 1600      # 10 second test, rate 1600
+#   ./test_fhss.sh 10 "" 1000   # 10 second test, 1000ms delay before TX
+#   ./test_fhss.sh 10 1600 3000 ack  # 10 second test with ACK mode enabled
 
 TX_DEV="/dev/ttyACM1"
 RX_DEV="/dev/ttyACM0"
@@ -14,6 +16,13 @@ RX_LOG="rx.log"
 DURATION="${1:-10}"
 EXTRA_CMD="${2:-}"
 DELAY_MS="${3:-3000}"
+OPTIONS="${4:-}"
+
+# Check for ACK mode option
+ACK_MODE=0
+if [[ "$OPTIONS" == *"ack"* ]]; then
+    ACK_MODE=1
+fi
 
 # Convert delay to seconds for sleep
 DELAY_SEC=$(echo "scale=3; $DELAY_MS / 1000" | bc)
@@ -23,6 +32,9 @@ echo "================"
 echo "TX: $TX_DEV -> $TX_LOG"
 echo "RX: $RX_DEV -> $RX_LOG"
 echo "Duration: ${DURATION}s"
+if [ "$ACK_MODE" -eq 1 ]; then
+    echo "ACK mode: enabled"
+fi
 echo ""
 
 # Check devices exist
@@ -101,6 +113,15 @@ echo -n "$RATE_DIGIT" > "$RX_DEV"
 sleep 0.3
 echo -n "T" > "$RX_DEV"
 sleep 0.2
+
+# Enable ACK mode if requested
+if [ "$ACK_MODE" -eq 1 ]; then
+    echo "Enabling ACK mode on both boards..."
+    echo -n "A" > "$TX_DEV"
+    sleep 0.1
+    echo -n "A" > "$RX_DEV"
+    sleep 0.2
+fi
 
 # Wait for RX to start CAD scanning
 echo "Waiting ${DELAY_SEC}s for RX scanning..."

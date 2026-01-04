@@ -88,6 +88,27 @@ void Radio_txDoneBottom()
 void Radio_rx_done(uint8_t size, float rssi, float snr)
 {
 #ifdef ENABLE_HOPPING
+    /* Check if TX is waiting for ACK from RX */
+    if (fhss_cfg.state == FHSS_STATE_TX_WAIT_ACK) {
+        if (fhss_rx_ack_packet(LR20xx_rx_buf, size)) {
+            /* ACK received - transition to data mode */
+            uint8_t old_ch = fhss_cfg.current_channel;
+            fhss_set_channel(fhss_cfg.tx_next_channel);
+
+            fhss_cfg.dwell_start_ms = 0;  /* Special: first channel, delay hop */
+            fhss_cfg.pkts_on_channel = 0;
+            fhss_cfg.state = FHSS_STATE_TX_DATA;
+
+            printf("FHSS: ACK received, hop ch%u->ch%u, ready for data\r\n",
+                   old_ch, fhss_cfg.tx_next_channel);
+            return;
+        } else {
+            /* Invalid ACK - continue waiting (timeout will retry) */
+            printf("FHSS: invalid ACK received (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
+            return;
+        }
+    }
+
     /* Check if this is an FHSS sync packet */
     if (fhss_cfg.state == FHSS_STATE_RX_SYNC) {
         /* Reject sync packets with very poor signal quality (likely noise).
@@ -101,12 +122,18 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
             return;
         }
         if (fhss_rx_sync_packet(LR20xx_rx_buf, size)) {
-            /* Sync packet processed - RX is now synchronized with TX.
-             * Configure data mode and start RX for data packets. */
+            /* Sync packet processed - RX is now synchronized with TX. */
             extern uint32_t HAL_GetTick(void);
             printf("FHSS synchronized (rssi=%.1f, snr=%.1f) time=%lu\r\n", rssi, snr, HAL_GetTick());
-            /* Use fhss_rx_data() to properly set up streaming state
-             * (clears FIFO, sets rx_decode_idx to skip header) */
+
+            /* Check if ACK mode - need to send ACK before receiving data */
+            if (fhss_cfg.state == FHSS_STATE_RX_SEND_ACK) {
+                /* Send ACK to TX - TxDone will configure data mode */
+                fhss_send_sync_ack();
+                return;
+            }
+
+            /* No ACK mode - start RX for data packets */
             fhss_rx_data();
             printf("FHSS: waiting for data on ch%u at time=%lu\r\n", fhss_cfg.current_channel, HAL_GetTick());
             return;
@@ -120,15 +147,35 @@ void Radio_rx_done(uint8_t size, float rssi, float snr)
 
     /* Check if this is an FHSS data packet */
     if (fhss_cfg.state == FHSS_STATE_RX_DATA) {
+        extern uint32_t HAL_GetTick(void);
+        uint32_t irq_start = HAL_GetTick();
+
         int payload_len = fhss_rx_data_packet(LR20xx_rx_buf, size);
         if (payload_len > 0) {
             /* Don't strip header - rx_decode_idx is set to skip it.
              * Pass full packet size; streaming decode uses rx_decode_idx offset. */
-            printf("FHSS: data pkt ok (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
-            RadioEvents->RxDone(size, rssi, snr);
-            /* Start RX for next packet (resets rx_decode_idx to skip header) */
+
+            /* CRITICAL: Restart RX FIRST to minimize gap between packets.
+             * With 8-symbol preamble (~16ms at SF8), even a few ms of printf
+             * delay can cause preamble detection failure. All printf calls
+             * are now deferred until after RX is restarted. */
             fhss_rx_data();
+
+            uint32_t rx_delay = HAL_GetTick() - irq_start;
+
+            /* Now safe to print - RX is already listening */
+            printf("FHSS: data pkt ok (rssi=%.1f, snr=%.1f) rx_delay=%lums\r\n", rssi, snr, rx_delay);
+            fhss_rx_data_print();
+
+            /* RadioEvents->RxDone() includes LCD print which can take 10-50ms.
+             * This is now safe since RX is already restarted. */
+            RadioEvents->RxDone(size, rssi, snr);
             return;
+        }
+        /* Check if state changed (e.g., end packet received, now scanning).
+         * If so, don't restart data RX - let the new state handle it. */
+        if (fhss_cfg.state != FHSS_STATE_RX_DATA) {
+            return;  /* State changed, don't interfere */
         }
         /* Invalid data packet - log signal quality for debugging */
         printf("FHSS: bad data pkt (rssi=%.1f, snr=%.1f)\r\n", rssi, snr);
@@ -144,6 +191,11 @@ void Radio_timeout_callback(bool tx)
 {
     if (!tx) {
 #ifdef ENABLE_HOPPING
+        /* Check if TX is waiting for ACK - timeout triggers retry */
+        if (fhss_cfg.state == FHSS_STATE_TX_WAIT_ACK) {
+            fhss_ack_timeout_handler();
+            return;  /* Don't call RxTimeout callback - FHSS handled it */
+        }
         /* Check if FHSS is scanning - handle false CAD detection */
         fhss_timeout_handler();
         /* Check if FHSS is in data mode - hop and continue or return to scan */
@@ -368,11 +420,11 @@ static void Init_lr20xx(const RadioEvents_t* e)
 		printf("FE calibrated at 915 MHz\r\n");
 	}
 
-	{
+	/*remove me{
 		lr20xx_system_version_t version;
 		ASSERT_LR20XX_RC(lr20xx_system_get_version(NULL, &version));
 		printf("Z LR20xx v%u.%u\r\n", version.major, version.minor);
-	}
+	}*/
 }
 
 static void Standby_lr20xx()

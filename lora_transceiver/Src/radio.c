@@ -132,7 +132,8 @@ const RadioEvents_t rev = {
 #ifndef LORA_BW_KHZ
 #define LORA_BW_KHZ             500
 #endif
-#define TX_DBM                  /*20*/	0 // TODO temporary low-power for bench testing
+/* recommend lower power if fhss bench testing */
+#define TX_DBM                  20
 #define CF_HZ               917600000
 
 /************************************************************/

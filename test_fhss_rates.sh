@@ -3,10 +3,11 @@
 # FHSS radio link test for all codec2 rates
 # Tests that encoded frames are correctly sent/received over FHSS link
 #
-# Usage: ./test_fhss_rates.sh [duration_seconds] [rate]
+# Usage: ./test_fhss_rates.sh [duration_seconds] [rate] [ack]
 #   duration_seconds: test duration per rate (default: 15)
 #   rate: specific rate to test (3200,2400,1600,1400,1300,1200,700C)
 #         if omitted, tests all rates
+#   ack: if "ack" is specified, enables ACK-based sync mode
 #
 
 TX_DEV="/dev/ttyACM1"
@@ -14,6 +15,7 @@ RX_DEV="/dev/ttyACM0"
 BAUD=115200
 TEST_DURATION=${1:-15}  # Default 15 seconds per rate (longer for FHSS sync)
 SINGLE_RATE=${2:-""}    # Optional: test only this rate
+ACK_MODE=${3:-""}       # Optional: "ack" to enable ACK mode
 LOG_DIR="test_logs"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
@@ -138,6 +140,14 @@ run_test() {
     send_cmd "$RX_DEV" "T"
     sleep 0.5
 
+    # Enable ACK mode if requested
+    if [ "$ACK_MODE" = "ack" ]; then
+        echo "  Enabling ACK mode..."
+        send_cmd "$TX_DEV" "A"
+        send_cmd "$RX_DEV" "A"
+        sleep 0.3
+    fi
+
     # Wait for RX to start scanning (FHSS needs time to initialize and start CAD)
     echo "  Waiting for RX to scan (5s)..."
     sleep 5
@@ -223,6 +233,9 @@ print_summary() {
     echo "========================================"
     echo "Duration per rate: ${TEST_DURATION}s"
     echo "Bandwidth: 125kHz (FHSS default)"
+    if [ "$ACK_MODE" = "ack" ]; then
+        echo "ACK mode: enabled"
+    fi
     echo ""
 
     for rate_idx in 0 1 2 3 4 5 8; do
@@ -256,6 +269,9 @@ echo "===================="
 echo "TX device: $TX_DEV"
 echo "RX device: $RX_DEV"
 echo "Test duration: ${TEST_DURATION}s per rate"
+if [ "$ACK_MODE" = "ack" ]; then
+    echo "ACK mode: enabled"
+fi
 
 # Validate single rate if specified
 if [ -n "$SINGLE_RATE" ]; then

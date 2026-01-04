@@ -101,6 +101,9 @@ If RX syncs late in the sync phase, TX may have already hopped away from the fir
 ### LFSR Synchronization (Fixed)
 Previously, ACK timeout retries called `fhss_random_channel()` which advanced the LFSR, causing TX and RX to hop to different channels. Fixed by using deterministic channel selection for retries: `(tx_next_channel + sync_attempts * 17) % 50`.
 
+### Stale RX FIFO Data (Fixed)
+After receiving an end packet, the RX FIFO could retain 39 bytes of stale data. On the next transmission, when CAD detected a sync packet, the stale data was read instead of the actual sync packet, causing "Invalid sync marker 0xEE" errors (0xEE being the end packet marker). Fixed by clearing the RX FIFO when CAD detects activity before receiving the sync packet.
+
 ## Test Results
 
 ### With ACK Mode (15-second test, recommended)

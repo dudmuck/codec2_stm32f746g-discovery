@@ -62,6 +62,16 @@ typedef struct __attribute__((packed)) {
 #define FHSS_ACK_TIMEOUT_MS     200    /* Time to wait for ACK - ~100ms typical, 200ms with margin */
 #define FHSS_ACK_PREAMBLE_LEN   8      /* Short preamble - TX already in RX mode via auto-TX/RX */
 
+/* End-of-transmission packet - sent by TX when PTT released
+ * Allows RX to immediately stop audio instead of waiting for timeouts.
+ * Uses same implicit header mode as data packets. */
+#define FHSS_END_MARKER         0xEE
+typedef struct __attribute__((packed)) {
+    uint8_t  marker;           /* End marker (0xEE) */
+} fhss_end_pkt_t;
+
+#define FHSS_END_PKT_SIZE       sizeof(fhss_end_pkt_t)
+
 /* Number of sync packets sent (without ACK mode) */
 #define FHSS_SYNC_REPEAT_COUNT  3
 
@@ -264,6 +274,10 @@ bool fhss_is_tx_data_ready(void);
 
 /* Stop FHSS TX and return to idle */
 void fhss_tx_stop(void);
+
+/* Send end-of-transmission packet to RX
+ * Called automatically by fhss_tx_stop() */
+void fhss_send_end_packet(void);
 
 /* Get recommended CAD parameters for given SF */
 void fhss_get_cad_params_for_sf(uint8_t sf, uint8_t cad_symb_nb,
