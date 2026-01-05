@@ -117,6 +117,9 @@ message(STATUS "CMAKE_ASM_FLAGS: " ${CMAKE_ASM_FLAGS})
 
 include(STM32746_Lib.cmake)
 
+# Opus codec library (alternative to codec2)
+include(Opus_Lib.cmake)
+
 ###################################################
 
 # Macro for elf->bin
