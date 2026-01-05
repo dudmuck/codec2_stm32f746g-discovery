@@ -4,3 +4,6 @@
 [submodule "STM32CubeF7"]
 	path = STM32CubeF7
 	url = https://github.com/STMicroelectronics/STM32CubeF7
+[submodule "opus"]
+	path = opus
+	url = https://gitlab.xiph.org/xiph/opus.git
