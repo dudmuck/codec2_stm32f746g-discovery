@@ -128,8 +128,9 @@ struct OPUS_WRAPPER *opus_wrapper_create(int mode)
     /* Set complexity - with fixed-point ARM DSP we have CPU headroom for quality */
     opus_encoder_ctl(ow->encoder, OPUS_SET_COMPLEXITY(5));
 
-    /* Enable VBR for better quality at same average bitrate */
-    opus_encoder_ctl(ow->encoder, OPUS_SET_VBR(1));
+    /* Disable VBR for fixed frame size (required for radio transmission
+     * where we don't transmit per-frame length information) */
+    opus_encoder_ctl(ow->encoder, OPUS_SET_VBR(0));
 
     /* Set signal type to voice */
     opus_encoder_ctl(ow->encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));

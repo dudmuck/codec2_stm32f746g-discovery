@@ -416,7 +416,8 @@ void svc_uart()
     } else {
         printf("Commands:\r\n");
         printf("  t: TX start    r: TX end (RX)\r\n");
-        printf("  T: toggle test mode\r\n");
+        printf("  T: toggle test mode (seq nums)\r\n");
+        printf("  S: toggle silence test mode\r\n");
         printf("  ?: test stats  .: radio status\r\n");
         printf("  q/a: mic vol   w/s: spkr vol\r\n");
         printf("  b/B: BW down/up (SF auto-adjusted)\r\n");
@@ -573,27 +574,35 @@ void sine_out(unsigned skipcnt)
 {
     short *outPtr = NULL;
     unsigned table_idx;
+    AudioPlay_e state;
 
     skipcnt /= 2;
 
-    if (audio_play_state_ == AUDIO_PLAY_FULL)
+    __disable_irq();
+    state = audio_play_state_;
+    audio_play_state_ = AUDIO_PLAY_NONE;
+    __enable_irq();
+
+    if (state == AUDIO_PLAY_FULL)
         outPtr = (short*)audio_buffer_out_B;
-    else if (audio_play_state_ == AUDIO_PLAY_HALF)
+    else if (state == AUDIO_PLAY_HALF)
         outPtr = (short*)audio_buffer_out;
 
-    audio_play_state_ = AUDIO_PLAY_NONE;
-
     table_idx = 0;
-    for (unsigned i = 0; i < audio_block_size; i++) {
-        int16_t out = (int16_t)(sine_table[table_idx] - 0x8000);
-        out /= 4;
+    {
+        short *bufStart = outPtr;
+        for (unsigned i = 0; i < audio_block_size; i++) {
+            int16_t out = (int16_t)(sine_table[table_idx] - 0x8000);
+            out /= 4;
 
-        *outPtr++ = out;
-        *outPtr++ = out;
+            *outPtr++ = out;
+            *outPtr++ = out;
 
-        table_idx += skipcnt;
-        if (table_idx > SINE_TABLE_LENGTH)
-            table_idx -= SINE_TABLE_LENGTH;
+            table_idx += skipcnt;
+            if (table_idx > SINE_TABLE_LENGTH)
+                table_idx -= SINE_TABLE_LENGTH;
+        }
+        SCB_CleanDCache_by_Addr((uint32_t*)bufStart, audio_block_size * 4);
     }
 } // ..sine_out()
 
@@ -605,57 +614,74 @@ void start_tone()
 void silence()
 {
     short *outPtr = NULL;
+    AudioPlay_e state;
 
     while (audio_play_state_ == AUDIO_PLAY_NONE)
         asm("nop");
 
-    if (audio_play_state_ == AUDIO_PLAY_FULL)
+    __disable_irq();
+    state = audio_play_state_;
+    audio_play_state_ = AUDIO_PLAY_NONE;
+    __enable_irq();
+
+    if (state == AUDIO_PLAY_FULL)
         outPtr = (short*)audio_buffer_out_B;
-    else if (audio_play_state_ == AUDIO_PLAY_HALF)
+    else if (state == AUDIO_PLAY_HALF)
         outPtr = (short*)audio_buffer_out;
 
-    audio_play_state_ = AUDIO_PLAY_NONE;
-
     memset(outPtr, 0, audio_block_size);
+    SCB_CleanDCache_by_Addr((uint32_t*)outPtr, audio_block_size);
 
     while (audio_play_state_ == AUDIO_PLAY_NONE)
         asm("nop");
 
-    if (audio_play_state_ == AUDIO_PLAY_FULL)
+    __disable_irq();
+    state = audio_play_state_;
+    audio_play_state_ = AUDIO_PLAY_NONE;
+    __enable_irq();
+
+    if (state == AUDIO_PLAY_FULL)
         outPtr = (short*)audio_buffer_out_B;
-    else if (audio_play_state_ == AUDIO_PLAY_HALF)
+    else if (state == AUDIO_PLAY_HALF)
         outPtr = (short*)audio_buffer_out;
 
-    audio_play_state_ = AUDIO_PLAY_NONE;
-
     memset(outPtr, 0, audio_block_size);
+    SCB_CleanDCache_by_Addr((uint32_t*)outPtr, audio_block_size);
 } // ..silence()
 
 void tone_out(uint8_t mask)
 {
     short *outPtr = NULL;
+    AudioPlay_e state;
 
     while (audio_play_state_ == AUDIO_PLAY_NONE)
         asm("nop");
 
-    if (audio_play_state_ == AUDIO_PLAY_FULL)
+    __disable_irq();
+    state = audio_play_state_;
+    audio_play_state_ = AUDIO_PLAY_NONE;
+    __enable_irq();
+
+    if (state == AUDIO_PLAY_FULL)
         outPtr = (short*)audio_buffer_out_B;
-    else if (audio_play_state_ == AUDIO_PLAY_HALF)
+    else if (state == AUDIO_PLAY_HALF)
         outPtr = (short*)audio_buffer_out;
 
-    audio_play_state_ = AUDIO_PLAY_NONE;
-
-    for (unsigned i = 0; i < audio_block_size; i++) {
-        short out;
-        if (mask == 0xff) {
-            out = get_pn9_byte(&noise_lfsr);
-            out ^= get_pn9_byte(&noise_lfsr);
-            out <<= 8;
-            out += get_pn9_byte(&noise_lfsr);
-            out &= 0x1fff; // reduce volume
-            *outPtr++ = out;
-            *outPtr++ = out;
+    {
+        short *bufStart = outPtr;
+        for (unsigned i = 0; i < audio_block_size; i++) {
+            short out;
+            if (mask == 0xff) {
+                out = get_pn9_byte(&noise_lfsr);
+                out ^= get_pn9_byte(&noise_lfsr);
+                out <<= 8;
+                out += get_pn9_byte(&noise_lfsr);
+                out &= 0x1fff; // reduce volume
+                *outPtr++ = out;
+                *outPtr++ = out;
+            }
         }
+        SCB_CleanDCache_by_Addr((uint32_t*)bufStart, audio_block_size * 4);
     }
 }
 
@@ -674,32 +700,55 @@ void put_spkr()
 {
     unsigned x;
     short *outPtr = NULL;
+    AudioPlay_e state;
 
     while (audio_play_state_ == AUDIO_PLAY_NONE)
         asm("nop");
 
-    if (audio_play_state_ == AUDIO_PLAY_FULL) {
+    /* Atomically read and clear state to avoid race condition where
+     * a callback overwrites the state between our check and clear */
+    __disable_irq();
+    state = audio_play_state_;
+    audio_play_state_ = AUDIO_PLAY_NONE;
+    __enable_irq();
+
+    if (state == AUDIO_PLAY_FULL) {
         //printf("playFull\r\n");
         outPtr = (short*)audio_buffer_out_B;
-    } else if (audio_play_state_ == AUDIO_PLAY_HALF) {
+    } else if (state == AUDIO_PLAY_HALF) {
         //printf("playHalf\r\n");
         outPtr = (short*)audio_buffer_out;
     }
 
-    audio_play_state_ = AUDIO_PLAY_NONE;
+    /* Output decoded samples directly from decBuf. */
+    {
+        short *bufStart = outPtr;  /* Save start address for cache flush */
+        if (navgs_ == 1) {
+            /* No upsampling - copy mono samples to stereo output */
+            for (x = 0; x < nsamp; x++) {
+                *outPtr++ = decBuf[x];
+                *outPtr++ = decBuf[x];
+            }
+        } else {
+            /* Upsampling with interpolation */
+            for (x = 0; x < nsamp; x++) {
+                short y0 = decBuf[x];
+                short dy = 0;
 
-    for (x = 0; x < nsamp; x++) {
-        short y0 = prevDecBuf[x];
-        short dy = 0;
-        if (navgs_ > 1 && x < (nsamp-1)) {
-            dy = (prevDecBuf[x+1] - y0) * step;
-        }
+                if (x < (nsamp - 1)) {
+                    dy = (decBuf[x+1] - y0) * step;
+                }
 
-        for (unsigned i = 0; i < navgs_; i++) {
-            *outPtr++ = y0;
-            *outPtr++ = y0;
-            y0 += dy;
+                for (unsigned i = 0; i < navgs_; i++) {
+                    *outPtr++ = y0;
+                    *outPtr++ = y0;
+                    y0 += dy;
+                }
+            }
         }
+        /* Flush D-cache to RAM so DMA can read the data we just wrote.
+         * STM32F7 D-cache causes CPU writes to stay in cache until flushed. */
+        SCB_CleanDCache_by_Addr((uint32_t*)bufStart, nsamp * navgs_ * 4);
     }
 
     fdb ^= 1;
@@ -718,7 +767,7 @@ void parse_rx()
     static short from_decoderB[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];
 
     if (test_mode) {
-        /* Test mode: check sequence numbers instead of decoding.
+        /* Test mode: check sequence numbers, then decode for timing.
          * Also detect streaming gaps (time between packets > inter_pkt_timeout) */
         if (last_rx_pkt_tick != 0) {
             uint32_t gap = uwTick - last_rx_pkt_tick;
@@ -732,11 +781,16 @@ void parse_rx()
         for (n = 0; n < rx_size; n += _bytes_per_frame) {
             test_mode_decode(&lorahal.rx_buf[n]);
         }
-        return;
+        /* Fall through to decode path for realistic timing */
     }
 
     if (currently_decoding == 0) {
         fdb = 0;
+        /* Clear decoder buffers to avoid garbage on first put_spkr() call.
+         * When fdb=0, prevDecBuf=from_decoderB which would otherwise contain
+         * stale/uninitialized data causing an audio click. */
+        memset(from_decoderA, 0, sizeof(from_decoderA));
+        memset(from_decoderB, 0, sizeof(from_decoderB));
         start_tone();
         currently_decoding = 1;
     } else {
@@ -785,6 +839,11 @@ void streaming_rx_decode(void)
 
         if (currently_decoding == 0) {
             fdb = 0;
+            /* Clear decoder buffers to avoid garbage on first put_spkr() call.
+             * When fdb=0, prevDecBuf=from_decoderB which would otherwise contain
+             * stale/uninitialized data causing an audio click. */
+            memset(from_decoderA, 0, sizeof(from_decoderA));
+            memset(from_decoderB, 0, sizeof(from_decoderB));
             start_tone();
             currently_decoding = 1;
             if (!test_mode)
@@ -1148,15 +1207,15 @@ void AudioLoopback_demo(void)
                 }
                 audio_rec_buffer_state = BUFFER_OFFSET_NONE;
 
+                /* Opus encode: one frame per callback */
+                decimated_encode((short*)inPtr, &lorahal.tx_buf[tx_buf_idx]);
+
                 if (test_mode) {
-                    /* Test mode: produce one _bytes_per_frame per callback */
+                    /* Test mode: overwrite encoded data with sequence numbers.
+                     * Opus encode still runs above for realistic timing. */
                     test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
-                    tx_buf_idx += _bytes_per_frame;
-                } else {
-                    /* Opus encode: one frame per callback */
-                    decimated_encode((short*)inPtr, &lorahal.tx_buf[tx_buf_idx]);
-                    tx_buf_idx += _bytes_per_frame;
                 }
+                tx_buf_idx += _bytes_per_frame;
 
                 lorahal.service();
 

@@ -98,7 +98,7 @@ const RadioEvents_t rev = {
 };
 
 #define LORA_BW_KHZ             500
-#define TX_DBM                  20
+#define TX_DBM                  /*20*/ -5		/* TODO low power used for bench testing */
 #define CF_HZ               917600000
 
 /************************************************************/

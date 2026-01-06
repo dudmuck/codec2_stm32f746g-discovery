@@ -478,29 +478,32 @@ int main(void)
          * At 25 fps (40ms frames), we need to stream ~payload_bytes every 40ms
          * LR2021 max: ~100kbps at 1000kHz BW, SF5
          */
+        /* Maximize frames per packet (max LoRa payload = 255 bytes).
+         * More frames per packet = fewer packet boundaries = smoother audio.
+         * 64K/96K modes have frames > 255 bytes, not supported over LoRa. */
         switch (selected_bitrate) {
             case OPUS_WRAPPER_MODE_6K:
-                lora_payload_length = 60;   // ~2 frames @ 30 bytes each
+                lora_payload_length = 240;  // 8 frames @ 30 bytes each
                 sf_at_500KHz = 10;
                 str = "6K";
                 break;
             case OPUS_WRAPPER_MODE_8K:
-                lora_payload_length = 80;   // ~2 frames @ 40 bytes each
+                lora_payload_length = 240;  // 6 frames @ 40 bytes each
                 sf_at_500KHz = 10;
                 str = "8K";
                 break;
             case OPUS_WRAPPER_MODE_12K:
-                lora_payload_length = 120;  // ~2 frames @ 60 bytes each
+                lora_payload_length = 240;  // 4 frames @ 60 bytes each
                 sf_at_500KHz = 11;
                 str = "12K";
                 break;
             case OPUS_WRAPPER_MODE_16K:
-                lora_payload_length = 160;  // ~2 frames @ 80 bytes each
+                lora_payload_length = 240;  // 3 frames @ 80 bytes each
                 sf_at_500KHz = 11;
                 str = "16K";
                 break;
             case OPUS_WRAPPER_MODE_24K:
-                lora_payload_length = 240;  // ~2 frames @ 120 bytes each
+                lora_payload_length = 240;  // 2 frames @ 120 bytes each
                 sf_at_500KHz = 12;
                 str = "24K";
                 break;
@@ -515,14 +518,16 @@ int main(void)
                 str = "48K";
                 break;
             case OPUS_WRAPPER_MODE_64K:
-                lora_payload_length = 255;  // max LoRa payload, ~1 frame
+                /* Frame size 320 bytes > max LoRa payload 255 - NOT SUPPORTED */
+                lora_payload_length = 255;
                 sf_at_500KHz = 7;
-                str = "64K";
+                str = "64K-UNSUPPORTED";
                 break;
             case OPUS_WRAPPER_MODE_96K:
-                lora_payload_length = 255;  // max LoRa payload
-                sf_at_500KHz = 5;           // SF5 at 1000kHz for ~100kbps
-                str = "96K";
+                /* Frame size 480 bytes > max LoRa payload 255 - NOT SUPPORTED */
+                lora_payload_length = 255;
+                sf_at_500KHz = 5;
+                str = "96K-UNSUPPORTED";
                 break;
             default: str = NULL;
         } // ..switch (selected_bitrate)
