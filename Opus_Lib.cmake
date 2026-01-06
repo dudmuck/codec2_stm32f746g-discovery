@@ -1,5 +1,6 @@
 # Opus library configuration for STM32F746G (Cortex-M7)
 # This builds Opus as a static library for embedded ARM targets
+# Uses FIXED-POINT mode with ARM DSP optimizations for better performance
 
 set(OPUS_SRC ${PROJECT_SOURCE_DIR}/opus)
 
@@ -106,36 +107,31 @@ set(SILK_SOURCES
     ${OPUS_SRC}/silk/LPC_fit.c
 )
 
-# SILK floating-point sources (STM32F746G has FPU)
-set(SILK_SOURCES_FLOAT
-    ${OPUS_SRC}/silk/float/apply_sine_window_FLP.c
-    ${OPUS_SRC}/silk/float/corrMatrix_FLP.c
-    ${OPUS_SRC}/silk/float/encode_frame_FLP.c
-    ${OPUS_SRC}/silk/float/find_LPC_FLP.c
-    ${OPUS_SRC}/silk/float/find_LTP_FLP.c
-    ${OPUS_SRC}/silk/float/find_pitch_lags_FLP.c
-    ${OPUS_SRC}/silk/float/find_pred_coefs_FLP.c
-    ${OPUS_SRC}/silk/float/LPC_analysis_filter_FLP.c
-    ${OPUS_SRC}/silk/float/LTP_analysis_filter_FLP.c
-    ${OPUS_SRC}/silk/float/LTP_scale_ctrl_FLP.c
-    ${OPUS_SRC}/silk/float/noise_shape_analysis_FLP.c
-    ${OPUS_SRC}/silk/float/process_gains_FLP.c
-    ${OPUS_SRC}/silk/float/regularize_correlations_FLP.c
-    ${OPUS_SRC}/silk/float/residual_energy_FLP.c
-    ${OPUS_SRC}/silk/float/warped_autocorrelation_FLP.c
-    ${OPUS_SRC}/silk/float/wrappers_FLP.c
-    ${OPUS_SRC}/silk/float/autocorrelation_FLP.c
-    ${OPUS_SRC}/silk/float/burg_modified_FLP.c
-    ${OPUS_SRC}/silk/float/bwexpander_FLP.c
-    ${OPUS_SRC}/silk/float/energy_FLP.c
-    ${OPUS_SRC}/silk/float/inner_product_FLP.c
-    ${OPUS_SRC}/silk/float/k2a_FLP.c
-    ${OPUS_SRC}/silk/float/LPC_inv_pred_gain_FLP.c
-    ${OPUS_SRC}/silk/float/pitch_analysis_core_FLP.c
-    ${OPUS_SRC}/silk/float/scale_copy_vector_FLP.c
-    ${OPUS_SRC}/silk/float/scale_vector_FLP.c
-    ${OPUS_SRC}/silk/float/schur_FLP.c
-    ${OPUS_SRC}/silk/float/sort_FLP.c
+# SILK FIXED-POINT sources (optimized for embedded ARM with DSP instructions)
+set(SILK_SOURCES_FIXED
+    ${OPUS_SRC}/silk/fixed/LTP_analysis_filter_FIX.c
+    ${OPUS_SRC}/silk/fixed/LTP_scale_ctrl_FIX.c
+    ${OPUS_SRC}/silk/fixed/corrMatrix_FIX.c
+    ${OPUS_SRC}/silk/fixed/encode_frame_FIX.c
+    ${OPUS_SRC}/silk/fixed/find_LPC_FIX.c
+    ${OPUS_SRC}/silk/fixed/find_LTP_FIX.c
+    ${OPUS_SRC}/silk/fixed/find_pitch_lags_FIX.c
+    ${OPUS_SRC}/silk/fixed/find_pred_coefs_FIX.c
+    ${OPUS_SRC}/silk/fixed/noise_shape_analysis_FIX.c
+    ${OPUS_SRC}/silk/fixed/process_gains_FIX.c
+    ${OPUS_SRC}/silk/fixed/regularize_correlations_FIX.c
+    ${OPUS_SRC}/silk/fixed/residual_energy16_FIX.c
+    ${OPUS_SRC}/silk/fixed/residual_energy_FIX.c
+    ${OPUS_SRC}/silk/fixed/warped_autocorrelation_FIX.c
+    ${OPUS_SRC}/silk/fixed/apply_sine_window_FIX.c
+    ${OPUS_SRC}/silk/fixed/autocorr_FIX.c
+    ${OPUS_SRC}/silk/fixed/burg_modified_FIX.c
+    ${OPUS_SRC}/silk/fixed/k2a_FIX.c
+    ${OPUS_SRC}/silk/fixed/k2a_Q16_FIX.c
+    ${OPUS_SRC}/silk/fixed/pitch_analysis_core_FIX.c
+    ${OPUS_SRC}/silk/fixed/vector_ops_FIX.c
+    ${OPUS_SRC}/silk/fixed/schur64_FIX.c
+    ${OPUS_SRC}/silk/fixed/schur_FIX.c
 )
 
 # Core Opus sources
@@ -153,18 +149,18 @@ set(OPUS_SOURCES
     ${OPUS_SRC}/src/mapping_matrix.c
 )
 
-# Opus floating-point sources
+# Opus floating-point analysis (still needed for some features)
 set(OPUS_SOURCES_FLOAT
     ${OPUS_SRC}/src/analysis.c
     ${OPUS_SRC}/src/mlp.c
     ${OPUS_SRC}/src/mlp_data.c
 )
 
-# Combine all sources
+# Combine all sources - using FIXED-POINT SILK for ARM DSP optimization
 set(OPUS_ALL_SRCS
     ${CELT_SOURCES}
     ${SILK_SOURCES}
-    ${SILK_SOURCES_FLOAT}
+    ${SILK_SOURCES_FIXED}
     ${OPUS_SOURCES}
     ${OPUS_SOURCES_FLOAT}
 )
@@ -179,18 +175,28 @@ target_include_directories(opus PUBLIC
 target_include_directories(opus PRIVATE
     ${OPUS_SRC}
     ${OPUS_SRC}/celt
+    ${OPUS_SRC}/celt/arm
     ${OPUS_SRC}/silk
-    ${OPUS_SRC}/silk/float
+    ${OPUS_SRC}/silk/fixed
+    ${OPUS_SRC}/silk/arm
     ${OPUS_SRC}/src
 )
 
-# Compile definitions for embedded ARM (Cortex-M7 with FPU)
+# Compile definitions for embedded ARM Cortex-M7 with FIXED-POINT
+# FIXED_POINT enables integer DSP math instead of floating-point
+# OPUS_ARM_INLINE_ASM enables ARMv4 inline assembly
+# OPUS_ARM_INLINE_EDSP enables ARMv5E DSP instructions (smulbb, smlabb, etc.)
+# OPUS_ARM_INLINE_MEDIA enables ARMv6 media instructions (ssat, etc.)
 target_compile_definitions(opus PRIVATE
     OPUS_BUILD
     HAVE_LRINTF
     HAVE_LRINT
     VAR_ARRAYS
-    FLOAT_APPROX
+    FIXED_POINT=1
+    OPUS_ARM_INLINE_ASM
+    OPUS_ARM_INLINE_EDSP
+    OPUS_ARM_INLINE_MEDIA
+    DISABLE_FLOAT_API
 )
 
 # Suppress some warnings in Opus code
@@ -198,3 +204,17 @@ target_compile_options(opus PRIVATE
     -Wno-maybe-uninitialized
     -Wno-unused-parameter
 )
+
+# Opus wrapper library - provides codec2-like API
+set(OPUS_WRAPPER_SRCS
+    ${PROJECT_SOURCE_DIR}/opus_wrapper/opus_wrapper.c
+)
+
+add_library(opus_wrapper STATIC ${OPUS_WRAPPER_SRCS})
+
+target_include_directories(opus_wrapper PUBLIC
+    ${PROJECT_SOURCE_DIR}/opus_wrapper
+    ${OPUS_SRC}/include
+)
+
+target_link_libraries(opus_wrapper opus)

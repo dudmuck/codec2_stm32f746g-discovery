@@ -41,6 +41,7 @@ typedef enum
 }BUFFER_StateTypeDef;
 
 extern AUDIO_ErrorTypeDef AUDIO_Start(uint32_t audio_start_address, uint32_t audio_file_size);
+extern volatile uint8_t dma_during_encode;  /* set during DMA callback to detect overruns */
 
 #define AUDIO_BLOCK_SIZE   ((uint32_t)0xFFFE)
 #define AUDIO_NB_BLOCKS    ((uint32_t)4)
@@ -198,6 +199,7 @@ static void AudioRec_SetHint(void)
 void BSP_AUDIO_IN_TransferComplete_CallBack(void)
 {
   audio_rec_buffer_state = BUFFER_OFFSET_FULL;
+  dma_during_encode = 1;  /* signal that DMA completed during processing */
   return;
 }
 
@@ -209,6 +211,7 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(void)
 void BSP_AUDIO_IN_HalfTransfer_CallBack(void)
 {
   audio_rec_buffer_state = BUFFER_OFFSET_HALF;
+  dma_during_encode = 1;  /* signal that DMA completed during processing */
   return;
 }
 

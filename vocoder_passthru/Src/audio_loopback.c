@@ -43,7 +43,6 @@ typedef enum
 unsigned audio_block_size;
 unsigned navgs_;
 float step;
-uint8_t bytesPerFrame;
 
 uint16_t *audio_buffer_in;
 uint16_t *audio_buffer_in_B;
@@ -61,9 +60,16 @@ extern uint32_t  audio_rec_buffer_state;
 uint8_t audio_in_vol = DEFAULT_AUDIO_IN_VOLUME;
 uint8_t audio_out_vol = 64;
 
-uint8_t encoded[N_ENCS][8];
+uint8_t encoded[N_ENCS][OPUS_WRAPPER_MAX_FRAME_BYTES];
+int encoded_len[N_ENCS];  /* actual encoded size for each frame */
 int enc_in_idx, enc_out_idx;
-uint8_t latency = N_ENCS / 2;   // initial default value assigned
+uint8_t latency = 0;   // no initial buffer delay needed
+
+bool bypass_codec = false;  /* 'b' to toggle: skip encode/decode, direct copy */
+unsigned frame_count = 0;   /* count frames for diagnostics */
+uint32_t enc_time_max = 0, dec_time_max = 0;  /* timing in ms */
+volatile uint8_t dma_during_encode = 0;  /* set by DMA callback */
+unsigned dma_overrun_count = 0;  /* count of DMA callbacks during encode */
 
 typedef enum {
     PRESSED_NONE = 0,
@@ -158,17 +164,49 @@ void svc_uart()
             printf("outVolOk%u\r\n", audio_out_vol);
         else
             printf("outVolFail%u\r\n", audio_out_vol);
+    } else if (rxchar == 'b') {
+        bypass_codec = !bypass_codec;
+        printf("bypass_codec: %s\r\n", bypass_codec ? "ON (direct copy)" : "OFF (opus)");
+    } else if (rxchar == '?') {
+        int buf_fill = enc_in_idx - enc_out_idx;
+        if (buf_fill < 0) buf_fill += N_ENCS;
+        printf("frames:%u in:%d out:%d fill:%d bypass:%d navgs:%u nsamp:%u\r\n",
+               frame_count, enc_in_idx, enc_out_idx, buf_fill, bypass_codec, navgs_, nsamp);
+        /* Show last 4 encoded lengths */
+        {
+            int idx = enc_in_idx - 1;
+            if (idx < 0) idx += N_ENCS;
+            printf("enc_lens: %d %d %d %d\r\n",
+                   encoded_len[idx],
+                   encoded_len[(idx-1+N_ENCS)%N_ENCS],
+                   encoded_len[(idx-2+N_ENCS)%N_ENCS],
+                   encoded_len[(idx-3+N_ENCS)%N_ENCS]);
+        }
+        /* Show audio buffer samples: in[0-3], out[0-3] */
+        printf("in: %d %d %d %d  out: %d %d %d %d\r\n",
+               audio_buffer_in[0], audio_buffer_in[1], audio_buffer_in[2], audio_buffer_in[3],
+               audio_buffer_out[0], audio_buffer_out[1], audio_buffer_out[2], audio_buffer_out[3]);
+        /* Show timing: max encode/decode times in ms (40ms frame budget) */
+        printf("enc_max:%lu dec_max:%lu ms (budget 40ms) overruns:%u\r\n", enc_time_max, dec_time_max, dma_overrun_count);
+    } else if (rxchar == 't') {
+        enc_time_max = 0;
+        dec_time_max = 0;
+        dma_overrun_count = 0;
+        printf("timing reset\r\n");
+    } else if (rxchar == 'R') {
+        printf("Resetting...\r\n");
+        HAL_Delay(10);  /* allow printf to complete */
+        NVIC_SystemReset();
     }
 }
 
-#define N_HISTORY       12
 void decimated_encode(const short *in)
 {
-    short to_encoder[320];
+    short to_encoder[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];  /* max size for 48kHz */
     unsigned i, x;
     int sum;
-    int _in_idx;
     int num_avgs = navgs_;
+    int len;
 
     for (x = 0; x < nsamp; x++) {
         int avg;
@@ -190,68 +228,71 @@ void decimated_encode(const short *in)
         to_encoder[x] = avg;
     }
 
-    codec2_encode(c2, encoded[enc_in_idx], to_encoder);
-
-    BSP_LCD_SetFont(&Font12);
-    {   /* print encoded */
-        char i, str[64], *ptr;
-        unsigned n, y = BSP_LCD_GetYSize() - (N_HISTORY * 13);
-        BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
-        BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
-        _in_idx = enc_in_idx - N_HISTORY;
-        if (_in_idx < 0)
-            _in_idx += N_ENCS;
-        for (i = 0; i < N_HISTORY; i++) {
-            ptr = str;
-            for (n = 0; n < bytesPerFrame; n++) {
-                sprintf(ptr, "%02x ", encoded[_in_idx][n]);
-                ptr += 3;
-            }
-            BSP_LCD_DisplayStringAt(0, y, (uint8_t *)str, LEFT_MODE);
-            y += 13;
-            if (++_in_idx == N_ENCS)
-                _in_idx = 0;
+    {
+        uint32_t t0 = HAL_GetTick();
+        dma_during_encode = 0;  /* clear before encode */
+        len = opus_wrapper_encode(ow, to_encoder, encoded[enc_in_idx]);
+        if (dma_during_encode) {
+            dma_overrun_count++;
         }
+        uint32_t dt = HAL_GetTick() - t0;
+        if (dt > enc_time_max) enc_time_max = dt;
     }
+    if (len < 0) {
+        printf("encode err %d\r\n", len);
+    }
+    encoded_len[enc_in_idx] = len;
 
     if (++enc_in_idx == N_ENCS)
         enc_in_idx = 0;
 }
 
 
-void c2_passthru(short *out, const short *in)
+void opus_passthru(short *out, const short *in)
 {
-    static short from_decoderA[320];
-    static short from_decoderB[320];
-    static uint8_t fdb = 0;
-    short *decBuf, *prevDecBuf;
+    static short decoded[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];  /* max size for 48kHz */
     unsigned i, x;
 
-    /* 32ksps to 8ksps */
+    frame_count++;
 
+    if (bypass_codec) {
+        /* Direct copy: verify audio path without codec */
+        unsigned total_samples = nsamp * navgs_ * 2;  /* stereo */
+        memcpy(out, in, total_samples * sizeof(short));
+        return;
+    }
+
+    /* Decimate audio to Opus sample rate */
     decimated_encode(in);
 
-    decBuf = fdb ? from_decoderB : from_decoderA;
-    prevDecBuf = fdb ? from_decoderA : from_decoderB;
-    codec2_decode(c2, decBuf, encoded[enc_out_idx]);
+    /* Decode */
+    {
+        uint32_t t0 = HAL_GetTick();
+        int dec_ret = opus_wrapper_decode(ow, encoded[enc_out_idx], encoded_len[enc_out_idx], decoded);
+        uint32_t dt = HAL_GetTick() - t0;
+        if (dt > dec_time_max) dec_time_max = dt;
+        if (dec_ret < 0) {
+            printf("decode err %d (len=%d)\r\n", dec_ret, encoded_len[enc_out_idx]);
+        }
+    }
     if (++enc_out_idx == N_ENCS)
         enc_out_idx = 0;
 
+    /* Output decoded samples (with optional interpolation when navgs_ > 1) */
     for (x = 0; x < nsamp; x++) {
-        short y0 = prevDecBuf[x];
-        short dy;
-        if (x < (nsamp-1))
-            dy = (prevDecBuf[x+1] - y0) * step;
-        else
-            dy = (decBuf[0] - y0) * step;
+        short y0 = decoded[x];
+        short dy = 0;
+
+        if (navgs_ > 1 && x < (nsamp - 1)) {
+            dy = (decoded[x+1] - y0) * step;
+        }
 
         for (i = 0; i < navgs_; i++) {
-            short v = y0 += dy;
-            *out++ = v;
-            *out++ = v;
+            *out++ = y0;
+            *out++ = y0;
+            y0 += dy;
         }
     }
-    fdb ^= 1;
 }
 
 /**
@@ -300,9 +341,16 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
     BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
     BSP_LCD_DisplayStringAt(0, 45, (uint8_t *)"Microphones sound streamed to headphones", CENTER_MODE);
 
-    audio_block_size = nsamp * (audioRate / 8000) * 4;
-    navgs_ = audioRate / 8000;
-    step = 1.0 / navgs_;
+    {
+        int opus_sr = opus_wrapper_get_sample_rate(ow);
+        /* navgs_ = decimation ratio from audio rate to Opus sample rate */
+        navgs_ = audioRate / opus_sr;
+        if (navgs_ < 1) navgs_ = 1;  /* no upsampling supported */
+        audio_block_size = nsamp * navgs_ * 4;  /* stereo, 2 bytes per sample */
+        step = 1.0 / navgs_;
+        printf("audioRate=%u, opus_sr=%d, navgs=%u, nsamp=%u, block=%u, complexity=%d\r\n",
+               audioRate, opus_sr, navgs_, nsamp, audio_block_size, opus_wrapper_get_complexity(ow));
+    }
 
     /* Initialize SDRAM buffers */
     audio_buffer_in = (uint16_t*)AUDIO_REC_START_ADDR;
@@ -323,8 +371,6 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
 
     enc_in_idx = 0;
     enc_out_idx = 0;
-
-    bytesPerFrame = (codec2_bits_per_frame(c2) | 7) >> 3;
 
     for (sec = 0; sec < latency; sec++) {
         uint16_t* inBuf;
@@ -354,7 +400,7 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
         }
         audio_rec_buffer_state = BUFFER_OFFSET_NONE;
         /* Copy recorded 1st half block */
-        c2_passthru((short*)audio_buffer_out, (short*)audio_buffer_in);
+        opus_passthru((short*)audio_buffer_out, (short*)audio_buffer_in);
 
         /* Wait end of one block recording */
         while(audio_rec_buffer_state != BUFFER_OFFSET_FULL)
@@ -369,7 +415,7 @@ void AudioLoopback_demo(uint8_t audioRateIdx)
         }
         audio_rec_buffer_state = BUFFER_OFFSET_NONE;
         /* Copy recorded 2nd half block */
-        c2_passthru((short*)audio_buffer_out_B, (short*)audio_buffer_in_B);
+        opus_passthru((short*)audio_buffer_out_B, (short*)audio_buffer_in_B);
 
         svc_uart();
     } // .. while(1)
