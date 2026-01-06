@@ -31,7 +31,11 @@
 
 void init_lr20xx(void);
 
-#define LR20XX_BUF_SIZE  256
+/* Buffer size must accommodate: max_tx_offset + OPUS_WRAPPER_MAX_FRAME_BYTES
+ * When encoding at offset tx_buf_idx, Opus clears up to 512 bytes from that position.
+ * Max tx_buf_idx ≈ lora_payload_length (255), so need 255 + 512 = 767 minimum.
+ * Using 768 for alignment. */
+#define LR20XX_BUF_SIZE  768
 extern uint8_t LR20xx_tx_buf[LR20XX_BUF_SIZE];
 extern uint8_t LR20xx_rx_buf[LR20XX_BUF_SIZE];
 
