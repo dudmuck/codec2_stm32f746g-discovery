@@ -33,7 +33,7 @@
 #include "stm32746g_discovery_camera.h"
 #include "stm32746g_discovery_audio.h"
 #include "stm32746g_discovery_qspi.h"
-#include "codec2/src/codec2.h"
+#include "opus_wrapper.h"
 
 /* Macros --------------------------------------------------------------------*/
 #ifdef USE_FULL_ASSERT
@@ -114,7 +114,7 @@ extern UART_HandleTypeDef UartHandle;
 extern volatile uint8_t uartReceived;
 extern uint8_t rxchar;
 
-extern struct CODEC2 *c2;
+extern struct OPUS_WRAPPER *ow;
 extern unsigned nsamp;
 extern unsigned nsamp_x2;
 extern uint8_t frames_per_sec;

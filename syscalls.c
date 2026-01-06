@@ -125,7 +125,10 @@ static void uart_tx_start(void)
     }
 
     tx_busy = 1;
-    HAL_UART_Transmit_IT(&UartHandle, &uart_tx_buf[tail], len);
+    if (HAL_UART_Transmit_IT(&UartHandle, &uart_tx_buf[tail], len) != HAL_OK) {
+        /* TX failed (HAL_BUSY/HAL_ERROR) - clear busy flag to avoid deadlock */
+        tx_busy = 0;
+    }
 }
 
 /* Called from HAL when interrupt transfer completes */

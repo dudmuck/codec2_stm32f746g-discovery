@@ -36,7 +36,7 @@ uint32_t    ErrorCounter = 0;
 volatile uint8_t uartReceived;
 uint8_t rxchar;
 
-struct CODEC2 *c2;
+struct OPUS_WRAPPER *ow;
 uint8_t frames_per_sec;
 unsigned nsamp;
 unsigned nsamp_x2;
@@ -86,8 +86,35 @@ loraAppHal_t appHal;
 
 /* Private functions ---------------------------------------------------------*/
 
+volatile uint32_t uart_irq_count = 0;
+volatile uint32_t uart_error_flags = 0;
+volatile uint32_t uart_instance_corrupted = 0;
+
 void USART1_IRQHandler()
 {
+    uart_irq_count++;
+
+    /* Check for corruption before accessing Instance */
+    if (UartHandle.Instance != USART1) {
+        uart_instance_corrupted = (uint32_t)UartHandle.Instance;
+        /* Disable this IRQ to prevent infinite loop */
+        HAL_NVIC_DisableIRQ(USART1_IRQn);
+        return;
+    }
+
+    /* Read and clear any error flags before processing - prevents infinite IRQ loop */
+    uint32_t isrflags = READ_REG(UartHandle.Instance->ISR);
+    uart_error_flags = isrflags;  /* Save for debugging */
+
+    if (isrflags & USART_ISR_ORE)  /* Overrun error */
+        __HAL_UART_CLEAR_FLAG(&UartHandle, UART_CLEAR_OREF);
+    if (isrflags & USART_ISR_FE)   /* Framing error */
+        __HAL_UART_CLEAR_FLAG(&UartHandle, UART_CLEAR_FEF);
+    if (isrflags & USART_ISR_NE)   /* Noise error */
+        __HAL_UART_CLEAR_FLAG(&UartHandle, UART_CLEAR_NEF);
+    if (isrflags & USART_ISR_PE)   /* Parity error */
+        __HAL_UART_CLEAR_FLAG(&UartHandle, UART_CLEAR_PEF);
+
     HAL_UART_IRQHandler(&UartHandle);
 }
 
@@ -127,16 +154,15 @@ void rate_choice_SetHint()
 }
 
 const char * const modeStr[] = {
-    /* 0 */ "3200",
-    /* 1 */ "2400",
-    /* 2 */ "1600",
-    /* 3 */ "1400",
-    /* 4 */ "1300",
-    /* 5 */ "1200",
-
-    /* 6 */ "",
-    /* 7 */ "",
-    /* 8 */ "700C",
+    /* 0 */ "6K",
+    /* 1 */ "8K",
+    /* 2 */ "12K",
+    /* 3 */ "16K",
+    /* 4 */ "24K",
+    /* 5 */ "32K",
+    /* 6 */ "48K",
+    /* 7 */ "64K",
+    /* 8 */ "96K",
     NULL
 };
 
@@ -167,9 +193,12 @@ Touchscreen_DrawBackground(bool touched, uint16_t tx, uint16_t ty)
         if (ty >= BPS_SELECT_BASE_Y) {
             selection_state = ty - BPS_SELECT_BASE_Y;
             selection_state /= BPS_SELECT_STEP_Y;
+            /* Two columns: 0-4 in first, 5-8 in second */
             if (tx > (BPS_SELECT_BASE_X + BPS_SELECT_STEP_X)) {
-                selection_state += 6;
+                selection_state += 5;
             }
+            if (selection_state > 8)
+                selection_state = 8;
         }
     }
 
@@ -178,17 +207,16 @@ Touchscreen_DrawBackground(bool touched, uint16_t tx, uint16_t ty)
         if (selection_state == i) {
             BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
             BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
-            if (modeStr[i][0] != 0) // zero-length modes dont exist
-                pressed_bitrate = i;
+            pressed_bitrate = i;
         } else {
             BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
             BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
         }
         BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)modeStr[i], LEFT_MODE);
         _y += BPS_SELECT_STEP_Y;
-        if (i == 5) {
+        if (i == 4) {
             _y = BPS_SELECT_BASE_Y;
-            _x += BPS_SELECT_STEP_X;    // next column
+            _x += BPS_SELECT_STEP_X;    /* next column */
         }
         i++;
     }
@@ -369,7 +397,7 @@ int main(void)
         Touchscreen_DrawBackground(false, 0, 0);
     }
 
-    while (c2 == NULL) {
+    while (ow == NULL) {
         uint16_t x, y;
         /* Check UART for rate selection: '0'-'5' or '8' */
         if (uartReceived) {
@@ -379,18 +407,14 @@ int main(void)
             printf("rxchar '%c'\r\n", rxchar);
             if (rxchar >= '0' && rxchar <= '8') {
                 int8_t rate_idx = rxchar - '0';
-                /* indices 6 and 7 are invalid (empty modes) */
-                if (modeStr[rate_idx][0] != 0) {
-                    pressed_bitrate = rate_idx;
-                    printf("UART selected rate: %s\r\n", modeStr[rate_idx]);
-                    handled = 1;
-                }
+                pressed_bitrate = rate_idx;
+                printf("UART selected rate: %s\r\n", modeStr[rate_idx]);
+                handled = 1;
             }
             if (!handled) {
-                printf("Select codec2 rate:\r\n");
-                printf("  0: 3200  1: 2400  2: 1600\r\n");
-                printf("  3: 1400  4: 1300  5: 1200\r\n");
-                printf("  8: 700C\r\n");
+                printf("Select Opus rate:\r\n");
+                printf("  0: 6K   1: 8K   2: 12K  3: 16K  4: 24K\r\n");
+                printf("  5: 32K  6: 48K  7: 64K  8: 96K\r\n");
             }
         }
         if (status == TS_OK) {
@@ -409,9 +433,9 @@ int main(void)
                     BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
                     BSP_LCD_Clear(LCD_COLOR_WHITE);
                     BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
-                    c2 = codec2_create(pressed_bitrate);
-                    if (c2 == NULL) {
-                        BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"codec2_create() failed", CENTER_MODE);
+                    ow = opus_wrapper_create(pressed_bitrate);
+                    if (ow == NULL) {
+                        BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"opus_wrapper_create() failed", CENTER_MODE);
                         pressed_bitrate = -1;
                         HAL_Delay(500);
                         selection_state = -1;
@@ -433,7 +457,7 @@ int main(void)
             } // ..if (!TS_State.touchDetected)
         } // ..if (status == TS_OK)
         HAL_Delay(10);
-    } // ..while (c2 == NULL)
+    } // ..while (ow == NULL)
 
     /* Clear the LCD */
     BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
@@ -444,41 +468,61 @@ int main(void)
     {
         char buf[32];
         const char* str;
+        /* Opus at 8kHz, 40ms frames = 320 samples per frame
+         * Frame sizes are VBR but approximate:
+         *   6K:  ~30 bytes/frame     12K: ~60 bytes/frame
+         *   8K:  ~40 bytes/frame     16K: ~80 bytes/frame
+         *   24K: ~120 bytes/frame    32K: ~160 bytes/frame
+         *   48K: ~240 bytes/frame    64K: ~320 bytes/frame
+         *   96K: ~480 bytes/frame
+         * At 25 fps (40ms frames), we need to stream ~payload_bytes every 40ms
+         * LR2021 max: ~100kbps at 1000kHz BW, SF5
+         */
         switch (selected_bitrate) {
-            case CODEC2_MODE_3200:
-                lora_payload_length = 24;   // 3 frames, TOA=52ms < prod=60ms
-                sf_at_500KHz = 9;
-                str = "3200";
-                break;
-            case CODEC2_MODE_2400:
-                lora_payload_length = 36;   // 6 frames, TOA~=115ms < prod=120ms
+            case OPUS_WRAPPER_MODE_6K:
+                lora_payload_length = 60;   // ~2 frames @ 30 bytes each
                 sf_at_500KHz = 10;
-                str = "2400";
+                str = "6K";
                 break;
-            case CODEC2_MODE_1600:
-                lora_payload_length = 72;   // 9 frames, TOA~=350ms < prod=360ms
+            case OPUS_WRAPPER_MODE_8K:
+                lora_payload_length = 80;   // ~2 frames @ 40 bytes each
+                sf_at_500KHz = 10;
+                str = "8K";
+                break;
+            case OPUS_WRAPPER_MODE_12K:
+                lora_payload_length = 120;  // ~2 frames @ 60 bytes each
                 sf_at_500KHz = 11;
-                str = "1600";
+                str = "12K";
                 break;
-            case CODEC2_MODE_1400:
-                lora_payload_length = 49;   // 7 frames, TOA~=270ms < prod=280ms
+            case OPUS_WRAPPER_MODE_16K:
+                lora_payload_length = 160;  // ~2 frames @ 80 bytes each
                 sf_at_500KHz = 11;
-                str = "1400";
+                str = "16K";
                 break;
-            case CODEC2_MODE_1300:
-                lora_payload_length = 26;   // 2 frames, TOA~=57ms < prod=80ms
-                sf_at_500KHz = 9;
-                str = "1300";
+            case OPUS_WRAPPER_MODE_24K:
+                lora_payload_length = 240;  // ~2 frames @ 120 bytes each
+                sf_at_500KHz = 12;
+                str = "24K";
                 break;
-            case CODEC2_MODE_1200:
-                lora_payload_length = 36;   // 6 frames, TOA~=230ms < prod=240ms
-                sf_at_500KHz = 11;
-                str = "1200";
+            case OPUS_WRAPPER_MODE_32K:
+                lora_payload_length = 160;  // 1 frame @ 160 bytes
+                sf_at_500KHz = 9;           // need faster SF for higher rate
+                str = "32K";
                 break;
-            case CODEC2_MODE_700C:
-                lora_payload_length = 49;   // 7 frames, TOA~=270ms < prod=280ms
-                sf_at_500KHz = 11;
-                str = "700C";
+            case OPUS_WRAPPER_MODE_48K:
+                lora_payload_length = 240;  // 1 frame @ 240 bytes
+                sf_at_500KHz = 8;
+                str = "48K";
+                break;
+            case OPUS_WRAPPER_MODE_64K:
+                lora_payload_length = 255;  // max LoRa payload, ~1 frame
+                sf_at_500KHz = 7;
+                str = "64K";
+                break;
+            case OPUS_WRAPPER_MODE_96K:
+                lora_payload_length = 255;  // max LoRa payload
+                sf_at_500KHz = 5;           // SF5 at 1000kHz for ~100kbps
+                str = "96K";
                 break;
             default: str = NULL;
         } // ..switch (selected_bitrate)
@@ -494,18 +538,21 @@ int main(void)
         sprintf(buf, "%c  %s  %c", micLeftEn ? 'L' : ' ', str, micRightEn ? 'R' : ' ');
         BSP_LCD_DisplayStringAt(0, 10, (uint8_t *)buf, CENTER_MODE);
     }
-    nsamp = codec2_samples_per_frame(c2);
+    nsamp = opus_wrapper_samples_per_frame(ow);
     nsamp_x2 = nsamp * 2;
-    frames_per_sec = 8000 / nsamp;
+    /* frames_per_sec = sample_rate / samples_per_frame = 1000 / frame_ms */
+    frames_per_sec = 1000 / OPUS_WRAPPER_FRAME_MS;  /* 25 fps for 40ms frames */
 
     /* radio is started after bw/sf is known */
     start_radio();
 
-    if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
-        _bytes_per_frame = codec2_bits_per_frame(c2) / 4;       // dual frame for integer number of bytes
-        frame_length_bytes = _bytes_per_frame >> 1;
-    } else {
-        _bytes_per_frame = codec2_bits_per_frame(c2) / 8;
+    /* Opus uses VBR, so _bytes_per_frame is approximate based on bitrate.
+     * Use the expected frame size for the selected mode. */
+    {
+        int bitrate = opus_wrapper_get_bitrate(ow);
+        /* bytes_per_frame = (bitrate * frame_duration_ms) / (8 * 1000)
+         * For 40ms frame: bytes = bitrate * 40 / 8000 = bitrate / 200 */
+        _bytes_per_frame = bitrate / 200;
     }
 
     printf("nsamp:%u, _bytes_per_frame:%u, frame_length_bytes:%u\r\n", nsamp, _bytes_per_frame, frame_length_bytes);
@@ -520,10 +567,10 @@ int main(void)
 
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
      * or on underflow. Threshold set to _bytes_per_frame so we get IRQ when there's room
-     * for another codec2 frame.
+     * for another Opus frame.
      * Configure RX FIFO IRQ: alert when FIFO level exceeds threshold (data available to read)
      * or on overflow. Threshold set to _bytes_per_frame so we get IRQ when there's a full
-     * codec2 frame available for early decoding. */
+     * Opus frame available for early decoding. */
     lr20xx_radio_fifo_cfg_irq(NULL,
                               LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH | LR20XX_RADIO_FIFO_FLAG_OVERFLOW,  /* rx_fifo_irq_enable */
                               LR20XX_RADIO_FIFO_FLAG_THRESHOLD_LOW | LR20XX_RADIO_FIFO_FLAG_UNDERFLOW,  /* tx_fifo_irq_enable */

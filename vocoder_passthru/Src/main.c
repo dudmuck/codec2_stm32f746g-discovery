@@ -43,7 +43,7 @@ uint32_t    ErrorCounter = 0;
 volatile uint8_t uartReceived;
 uint8_t rxchar;
 
-struct CODEC2 *c2;
+struct OPUS_WRAPPER *ow;
 unsigned nsamp;
 unsigned nsamp_x2;
 
@@ -81,16 +81,15 @@ void rate_choice_SetHint()
 }
 
 const char * const modeStr[] = {
-    /* 0 */ "3200",
-    /* 1 */ "2400",
-    /* 2 */ "1600",
-    /* 3 */ "1400",
-    /* 4 */ "1300",
-    /* 5 */ "1200",
-
-    /* 6 */ "",
-    /* 7 */ "",
-    /* 8 */ "700C",
+    /* 0 */ "6K",
+    /* 1 */ "8K",
+    /* 2 */ "12K",
+    /* 3 */ "16K",
+    /* 4 */ "24K",
+    /* 5 */ "32K",
+    /* 6 */ "48K",
+    /* 7 */ "64K",
+    /* 8 */ "96K",
     NULL
 };
 
@@ -130,9 +129,12 @@ Touchscreen_DrawBackground(bool touched, uint16_t tx, uint16_t ty)
         if (tx < AUDIO_RATE_SELECT_BASE_X) {
             vocoder_rate_state = ty - SELECT_BASE_Y;
             vocoder_rate_state /= BPS_SELECT_STEP_Y;
+            /* Two columns: 0-4 in first, 5-8 in second */
             if (tx > (BPS_SELECT_BASE_X + BPS_SELECT_STEP_X)) {
-                vocoder_rate_state += 6;    // next column
+                vocoder_rate_state += 5;
             }
+            if (vocoder_rate_state > 8)
+                vocoder_rate_state = 8;
             printf("vocoder_rate_state:%d\r\n", vocoder_rate_state);
         } else {
             /* audio rate touch selection */
@@ -147,17 +149,16 @@ Touchscreen_DrawBackground(bool touched, uint16_t tx, uint16_t ty)
         if (vocoder_rate_state == i) {
             BSP_LCD_SetTextColor(LCD_COLOR_WHITE);
             BSP_LCD_SetBackColor(LCD_COLOR_BLUE);
-            if (modeStr[i][0] != 0) // zero-length modes dont exist
-                pressed_bitrate = i;
+            pressed_bitrate = i;
         } else {
             BSP_LCD_SetTextColor(LCD_COLOR_BLUE);
             BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
         }
         BSP_LCD_DisplayStringAt(_x, _y, (uint8_t *)modeStr[i], LEFT_MODE);
         _y += BPS_SELECT_STEP_Y;
-        if (i == 5) {
+        if (i == 4) {
             _y = SELECT_BASE_Y;
-            _x += BPS_SELECT_STEP_X;    // next column
+            _x += BPS_SELECT_STEP_X;    /* next column */
         }
         i++;
     }
@@ -322,8 +323,21 @@ int main(void)
         Touchscreen_DrawBackground(false, 0, 0);
     }
     
-    while (c2 == NULL) {
+    printf("Select vocoder: 0-8 for 6K/8K/12K/16K/24K/32K/48K/64K/96K\r\n");
+
+    while (ow == NULL) {
         uint16_t x, y;
+
+        /* Check for UART selection */
+        if (uartReceived) {
+            uartReceived = 0;
+            HAL_UART_Receive_IT(&UartHandle, &rxchar, 1);
+            if (rxchar >= '0' && rxchar <= '8') {
+                pressed_bitrate = rxchar - '0';
+                printf("UART selected mode %d (%s)\r\n", pressed_bitrate, modeStr[pressed_bitrate]);
+            }
+        }
+
         if (status == TS_OK) {
             BSP_TS_GetState(&TS_State);
             if (TS_State.touchDetected) {
@@ -332,7 +346,17 @@ int main(void)
                 printf("touch x=%u, y=%u\r\n", x, y);
                 Touchscreen_DrawBackground(true, x, y);
             } else {
-                if (pressed_bitrate != -1) { /* release on vocoder rate selection */
+                if (pressed_bitrate != -1) { /* release on vocoder rate selection (touch or UART) */
+                    /* Auto-select audio rate based on Opus mode */
+                    int opus_sr = opus_wrapper_mode_sample_rate(pressed_bitrate);
+                    switch (opus_sr) {
+                        case 8000:  selected_audiorate = 3; break;  /* 8k */
+                        case 16000: selected_audiorate = 2; break;  /* 16k */
+                        case 48000: selected_audiorate = 0; break;  /* 48k */
+                        default:    selected_audiorate = 2; break;  /* default 16k */
+                    }
+                    printf("Auto-selected audio rate %d for Opus mode %d (sr=%d)\r\n",
+                           selected_audiorate, pressed_bitrate, opus_sr);
                     /* Set LCD Foreground Layer  */
                     BSP_LCD_SelectLayer(LTDC_ACTIVE_LAYER);
                     BSP_LCD_SetFont(&LCD_DEFAULT_FONT);
@@ -340,9 +364,9 @@ int main(void)
                     BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
                     BSP_LCD_Clear(LCD_COLOR_WHITE);
                     BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
-                    c2 = codec2_create(pressed_bitrate);
-                    if (c2 == NULL) {
-                        BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"codec2_create() failed", CENTER_MODE);
+                    ow = opus_wrapper_create(pressed_bitrate);
+                    if (ow == NULL) {
+                        BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"opus_wrapper_create() failed", CENTER_MODE);
                         pressed_bitrate = -1;
                         HAL_Delay(500);
                         vocoder_rate_state = -1;
@@ -367,7 +391,7 @@ int main(void)
             } // ..if (!TS_State.touchDetected)
         } // ..if (status == TS_OK)
         HAL_Delay(10);
-    } // ..while (c2 == NULL)
+    } // ..while (ow == NULL)
 
     /* Clear the LCD */
     BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
@@ -379,20 +403,22 @@ int main(void)
         char buf[48];
         const char* str;
         switch (_selected_bitrate) {
-            case CODEC2_MODE_3200: str = "3200"; break;
-            case CODEC2_MODE_2400: str = "2400"; break;
-            case CODEC2_MODE_1600: str = "1600"; break;
-            case CODEC2_MODE_1400: str = "1400"; break;
-            case CODEC2_MODE_1300: str = "1300"; break;
-            case CODEC2_MODE_1200: str = "1200"; break;
-            case CODEC2_MODE_700C: str = "700C"; break;
+            case OPUS_WRAPPER_MODE_6K: str = "6K"; break;
+            case OPUS_WRAPPER_MODE_8K: str = "8K"; break;
+            case OPUS_WRAPPER_MODE_12K: str = "12K"; break;
+            case OPUS_WRAPPER_MODE_16K: str = "16K"; break;
+            case OPUS_WRAPPER_MODE_24K: str = "24K"; break;
+            case OPUS_WRAPPER_MODE_32K: str = "32K"; break;
+            case OPUS_WRAPPER_MODE_48K: str = "48K"; break;
+            case OPUS_WRAPPER_MODE_64K: str = "64K"; break;
+            case OPUS_WRAPPER_MODE_96K: str = "96K"; break;
             default: str = NULL;
         }
         sprintf(buf, "%c  %s  %c", micLeftEn ? 'L' : ' ', str, micRightEn ? 'R' : ' ');
         BSP_LCD_DisplayStringAt(0, 10, (uint8_t *)buf, CENTER_MODE);
     }
 
-    nsamp = codec2_samples_per_frame(c2);
+    nsamp = opus_wrapper_samples_per_frame(ow);
     nsamp_x2 = nsamp * 2;
     printf("nsamp:%u\r\n", nsamp);
 

@@ -69,6 +69,11 @@ AudioPlay_e audio_play_state_;
 
 volatile uint32_t terminate_spkr_at_tick;
 
+/* DMA overrun detection */
+volatile uint8_t dma_during_encode = 0;  /* set by DMA callback during encode */
+uint32_t dma_overrun_count = 0;          /* count of DMA callbacks during encode */
+uint32_t enc_time_max = 0;               /* max encode time in ms */
+
 volatile uint8_t user_button_pressed;   // flag
 volatile uint8_t txing;   // flag
 volatile uint8_t rx_start_at_tx_done;   // flag
@@ -259,6 +264,7 @@ void BSP_AUDIO_IN_Error_CallBack(void)
 void BSP_AUDIO_IN_TransferComplete_CallBack(void)
 {
     audio_rec_buffer_state = BUFFER_OFFSET_FULL;
+    dma_during_encode = 1;  /* signal that DMA completed during processing */
 }
 
 /**
@@ -269,6 +275,7 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(void)
 void BSP_AUDIO_IN_HalfTransfer_CallBack(void)
 {
     audio_rec_buffer_state = BUFFER_OFFSET_HALF;
+    dma_during_encode = 1;  /* signal that DMA completed during processing */
 }
 
 #define LFSR_INIT       0x1ff
@@ -360,6 +367,8 @@ void svc_uart()
         printf("Test stats: frames=%lu dropped=%lu dup=%lu gaps=%lu overflow=%lu/%lu\r\n",
                rx_frame_count, rx_dropped_count, rx_duplicate_count, rx_gap_count,
                rx_overflow_count, rx_overflow_bytes);
+        printf("enc_max:%lu ms overruns:%lu (budget %dms)\r\n",
+               enc_time_max, dma_overrun_count, OPUS_WRAPPER_FRAME_MS);
 #ifdef ENABLE_LR20XX
         printf("  fifo_rx_irqs=%lu\r\n", get_fifo_rx_irq_count());
 #endif
@@ -480,7 +489,7 @@ void test_mode_decode(const uint8_t *in)
 #define N_HISTORY       12
 void decimated_encode(const short *in, uint8_t *out)
 {
-    short to_encoder[320];
+    short to_encoder[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];  /* max size for 48kHz */
     unsigned i, x;
     int sum;
 
@@ -502,7 +511,17 @@ void decimated_encode(const short *in, uint8_t *out)
         to_encoder[x] = sum / navgs_;
     }
 
-    codec2_encode(c2, out, to_encoder);
+    {
+        uint32_t t0 = uwTick;
+        dma_during_encode = 0;  /* clear before encode */
+        opus_wrapper_encode(ow, to_encoder, out);
+        if (dma_during_encode) {
+            dma_overrun_count++;
+        }
+        uint32_t dt = uwTick - t0;
+        if (dt > enc_time_max) enc_time_max = dt;
+    }
+
     if (++frameCnt == frames_per_sec) {
         printf("%lums for %u frames\r\n", uwTick - tickAtFrameSecond, frames_per_sec);
         tickAtFrameSecond = uwTick;
@@ -671,16 +690,15 @@ void put_spkr()
 
     for (x = 0; x < nsamp; x++) {
         short y0 = prevDecBuf[x];
-        short dy;
-        if (x < (nsamp-1))
+        short dy = 0;
+        if (navgs_ > 1 && x < (nsamp-1)) {
             dy = (prevDecBuf[x+1] - y0) * step;
-        else
-            dy = (decBuf[0] - y0) * step;
+        }
 
         for (unsigned i = 0; i < navgs_; i++) {
-            short v = y0 += dy;
-            *outPtr++ = v;
-            *outPtr++ = v;
+            *outPtr++ = y0;
+            *outPtr++ = y0;
+            y0 += dy;
         }
     }
 
@@ -696,8 +714,8 @@ void put_spkr()
 void parse_rx()
 {
     unsigned n;
-    static short from_decoderA[320];
-    static short from_decoderB[320];
+    static short from_decoderA[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];  /* max size for 48kHz */
+    static short from_decoderB[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];
 
     if (test_mode) {
         /* Test mode: check sequence numbers instead of decoding.
@@ -726,52 +744,13 @@ void parse_rx()
         terminate_spkr_at_tick = 0;
     }
 
-    if (selected_bitrate == CODEC2_MODE_700C || selected_bitrate == CODEC2_MODE_1300) {
-        for (n = 0; n < rx_size; n += _bytes_per_frame) {
-            unsigned i;
-            uint8_t scratch[7];
-            printf("%u,%u) ", n, frame_length_bytes);
-            for (i = 0; i < _bytes_per_frame; i++)
-                printf("%02x ", lorahal.rx_buf[n+i]);
-            printf("\r\n");
-            for (i = 0; i < frame_length_bytes; i++)
-                scratch[i] = lorahal.rx_buf[n+i];
-            scratch[i] = lorahal.rx_buf[n+i] & 0xf0;
-            printf("A ");
-            for (i = 0; i <= frame_length_bytes; i++)
-                printf("%02x ", scratch[i]);
-
-            decBuf = fdb ? from_decoderB : from_decoderA;
-            prevDecBuf = fdb ? from_decoderA : from_decoderB;
-            codec2_decode(c2, decBuf, scratch);
-            put_spkr();
-
-            for (i = 0; i < frame_length_bytes; i++) {
-                scratch[i] = lorahal.rx_buf[n+i+frame_length_bytes] & 0x0f;
-                scratch[i] <<= 4;
-                if (i < frame_length_bytes)
-                    scratch[i] |= (lorahal.rx_buf[n+i+frame_length_bytes+1] & 0xf0) >> 4;
-            }
-            printf("B ");
-            for (i = 0; i <= frame_length_bytes; i++)
-                printf("%02x ", scratch[i]);
-
-            decBuf = fdb ? from_decoderB : from_decoderA;
-            prevDecBuf = fdb ? from_decoderA : from_decoderB;
-            codec2_decode(c2, decBuf, scratch);
-            put_spkr();
-        }
-
-    } else {
-        for (n = 0; n < rx_size; n += _bytes_per_frame) {
-            const uint8_t *encoded = &lorahal.rx_buf[n];
-            decBuf = fdb ? from_decoderB : from_decoderA;
-            prevDecBuf = fdb ? from_decoderA : from_decoderB;
-            codec2_decode(c2, decBuf, encoded);
-
-            //printf("%u,%uplayStateWait\r\n", fdb, n);
-            put_spkr();
-        }
+    /* Opus VBR: decode frames from rx buffer */
+    for (n = 0; n < rx_size; n += _bytes_per_frame) {
+        const uint8_t *encoded = &lorahal.rx_buf[n];
+        decBuf = fdb ? from_decoderB : from_decoderA;
+        prevDecBuf = fdb ? from_decoderA : from_decoderB;
+        opus_wrapper_decode(ow, encoded, _bytes_per_frame, decBuf);
+        put_spkr();
     }
 
     if (rx_size < lora_payload_length) {
@@ -787,8 +766,8 @@ void streaming_rx_decode(void)
 {
     extern volatile uint16_t rx_fifo_read_idx;
     extern volatile uint16_t rx_decode_idx;
-    static short from_decoderA[320];
-    static short from_decoderB[320];
+    static short from_decoderA[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];  /* max size for 48kHz */
+    static short from_decoderB[OPUS_WRAPPER_SAMPLES_PER_FRAME_48K];
 
     /* Check if new frames are available */
     while (rx_decode_idx + _bytes_per_frame <= rx_fifo_read_idx) {
@@ -815,36 +794,12 @@ void streaming_rx_decode(void)
         terminate_spkr_at_tick = 0;
         terminate_spkr_rx = 0;
 
-        if (selected_bitrate == CODEC2_MODE_700C || selected_bitrate == CODEC2_MODE_1300) {
-            /* Dual-frame modes - decode 2 frames from _bytes_per_frame */
-            unsigned i;
-            uint8_t scratch[7];
-            for (i = 0; i < frame_length_bytes; i++)
-                scratch[i] = lorahal.rx_buf[rx_decode_idx + i];
-            scratch[i] = lorahal.rx_buf[rx_decode_idx + i] & 0xf0;
-
-            decBuf = fdb ? from_decoderB : from_decoderA;
-            prevDecBuf = fdb ? from_decoderA : from_decoderB;
-            codec2_decode(c2, decBuf, scratch);
-            put_spkr();
-
-            for (i = 0; i < frame_length_bytes; i++) {
-                scratch[i] = lorahal.rx_buf[rx_decode_idx + i + frame_length_bytes] & 0x0f;
-                scratch[i] <<= 4;
-                if (i < frame_length_bytes)
-                    scratch[i] |= (lorahal.rx_buf[rx_decode_idx + i + frame_length_bytes + 1] & 0xf0) >> 4;
-            }
-
-            decBuf = fdb ? from_decoderB : from_decoderA;
-            prevDecBuf = fdb ? from_decoderA : from_decoderB;
-            codec2_decode(c2, decBuf, scratch);
-            put_spkr();
-        } else {
-            /* Normal modes - decode 1 frame per _bytes_per_frame */
+        /* Opus VBR: decode 1 frame per _bytes_per_frame */
+        {
             const uint8_t *encoded = &lorahal.rx_buf[rx_decode_idx];
             decBuf = fdb ? from_decoderB : from_decoderA;
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
-            codec2_decode(c2, decBuf, encoded);
+            opus_wrapper_decode(ow, encoded, _bytes_per_frame, decBuf);
             put_spkr();
         }
 
@@ -1042,10 +997,36 @@ void AudioLoopback_demo(void)
     uint8_t mid = 0;
     TS_StateTypeDef prev_TS_State;
     uint8_t tx_buf_idx = 0;
+    uint32_t audioRate;
+    int opus_sr;
+
+    /* Auto-select audio rate based on Opus mode sample rate */
+    opus_sr = opus_wrapper_get_sample_rate(ow);
+    switch (opus_sr) {
+        case 8000:
+            audioRate = I2S_AUDIOFREQ_8K;
+            break;
+        case 16000:
+            audioRate = I2S_AUDIOFREQ_16K;
+            break;
+        case 48000:
+        default:
+            audioRate = I2S_AUDIOFREQ_48K;
+            break;
+    }
+
+    /* Calculate decimation factor */
+    navgs_ = audioRate / opus_sr;
+    if (navgs_ < 1) navgs_ = 1;  /* no upsampling supported */
+    audio_block_size = nsamp * navgs_ * 4;  /* stereo, 2 bytes per sample */
+    step = 1.0 / navgs_;
+
+    printf("audioRate=%lu, opus_sr=%d, navgs=%u, nsamp=%u, block=%u, complexity=%d\r\n",
+           audioRate, opus_sr, navgs_, nsamp, audio_block_size, opus_wrapper_get_complexity(ow));
 
     BSP_LCD_SetFont(&Font12);
     /* Initialize Audio Recorder */
-    if (BSP_AUDIO_IN_OUT_Init(INPUT_DEVICE_DIGITAL_MICROPHONE_2, OUTPUT_DEVICE_HEADPHONE, I2S_AUDIOFREQ_16K, DEFAULT_AUDIO_IN_BIT_RESOLUTION, DEFAULT_AUDIO_IN_CHANNEL_NBR) == AUDIO_OK)
+    if (BSP_AUDIO_IN_OUT_Init(INPUT_DEVICE_DIGITAL_MICROPHONE_2, OUTPUT_DEVICE_HEADPHONE, audioRate, DEFAULT_AUDIO_IN_BIT_RESOLUTION, DEFAULT_AUDIO_IN_CHANNEL_NBR) == AUDIO_OK)
     {
         BSP_LCD_SetBackColor(LCD_COLOR_GREEN);
         BSP_LCD_SetTextColor(LCD_COLOR_BLACK);
@@ -1058,10 +1039,6 @@ void AudioLoopback_demo(void)
         BSP_LCD_DisplayStringAt(0, 30, (uint8_t *)"  AUDIO RECORD INIT FAIL", CENTER_MODE);
         BSP_LCD_DisplayStringAt(0, 60, (uint8_t *)" Try to reset board ", CENTER_MODE);
     }
-
-    audio_block_size = nsamp * 8;
-    navgs_ = 2;
-    step = 1.0 / navgs_;
 
     /* Initialize SDRAM buffers */
     audio_buffer_in = (uint16_t*)AUDIO_REC_START_ADDR;
@@ -1172,58 +1149,11 @@ void AudioLoopback_demo(void)
                 audio_rec_buffer_state = BUFFER_OFFSET_NONE;
 
                 if (test_mode) {
-                    /* Test mode: encode at same rate as real encoder */
-                    if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
-                        /* Dual-frame modes: produce one _bytes_per_frame every 2 callbacks */
-                        if (mid) {
-                            test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
-                            tx_buf_idx += _bytes_per_frame;
-                            mid = 0;
-                        } else {
-                            mid = 1;
-                        }
-                    } else {
-                        /* Normal modes: produce one _bytes_per_frame per callback */
-                        test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
-                        tx_buf_idx += _bytes_per_frame;
-                    }
-                } else if (selected_bitrate == CODEC2_MODE_1300 || selected_bitrate == CODEC2_MODE_700C) {
-                    unsigned i;
-                    if (mid) {
-                        unsigned oidx, iidx;
-                        decimated_encode((short*)inPtr, scratch);
-                        printf("B ");
-                        for (i = 0; i <= frame_length_bytes; i++) {
-                            printf("%02x ", scratch[i]);
-                        }
-                        printf("\r\n");
-                        oidx = frame_length_bytes;
-                        lorahal.tx_buf[tx_buf_idx+oidx] |= scratch[0] >> 4;
-                        oidx++;
-                        iidx = 0;
-                        for (i = 0; i <= frame_length_bytes; i++) {
-                            lorahal.tx_buf[tx_buf_idx+oidx] = scratch[iidx++] << 4;
-                            lorahal.tx_buf[tx_buf_idx+oidx] |= scratch[iidx] >> 4;
-                            oidx++;
-                        }
-
-                        printf("out ");
-                        for (i = 0; i < _bytes_per_frame; i++)
-                            printf("%02x ", lorahal.tx_buf[tx_buf_idx+i]);
-                        printf("\r\n");
-                        tx_buf_idx += _bytes_per_frame;
-                        mid = 0;
-                    /* ...second half */ } else { /* first half: */
-                        lorahal.tx_buf[tx_buf_idx+frame_length_bytes] = 0;
-                        decimated_encode((short*)inPtr, &lorahal.tx_buf[tx_buf_idx]);
-                        printf("\r\nA ");
-                        for (i = 0; i <= frame_length_bytes; i++)
-                            printf("%02x ", lorahal.tx_buf[tx_buf_idx+i]);
-                        printf("\r\n");
-                        mid = 1;
-                    }
-
+                    /* Test mode: produce one _bytes_per_frame per callback */
+                    test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+                    tx_buf_idx += _bytes_per_frame;
                 } else {
+                    /* Opus encode: one frame per callback */
                     decimated_encode((short*)inPtr, &lorahal.tx_buf[tx_buf_idx]);
                     tx_buf_idx += _bytes_per_frame;
                 }

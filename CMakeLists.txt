@@ -252,7 +252,7 @@ set(VP_SRCS
 )
 
 add_mapped_executable(vocoder_passthru ${VP_SRCS} ${SYSTEM_SRCS})
-target_link_libraries(vocoder_passthru stm32746gdiscovery stm32f7 codec2)
+target_link_libraries(vocoder_passthru stm32746gdiscovery stm32f7 opus_wrapper)
 #target_compile_definitions(vocoder_passthru PRIVATE -DMIC_DISABLE=MIC_RIGHT)
 target_include_directories(vocoder_passthru PRIVATE ${PROJECT_SOURCE_DIR}/vocoder_passthru/Inc)
 elf2bin(vocoder_passthru)
@@ -296,7 +296,7 @@ endif()
 
 set(LORA_TARGET lora_transceiver_${RADIO})
 add_mapped_executable(${LORA_TARGET} ${LORA_XCVR_SRCS} ${SYSTEM_SRCS})
-target_link_libraries(${LORA_TARGET} stm32746gdiscovery stm32f7 codec2)
+target_link_libraries(${LORA_TARGET} stm32746gdiscovery stm32f7 opus_wrapper)
 #target_compile_definitions(${LORA_TARGET} PRIVATE -DMIC_DISABLE=MIC_RIGHT)
 if(${RADIO} STREQUAL SX12XX)
 	set(RADIO_INCLUDES

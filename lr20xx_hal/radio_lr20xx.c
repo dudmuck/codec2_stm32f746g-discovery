@@ -636,28 +636,28 @@ void print_streaming_timing_analysis(void)
     lr20xx_radio_lora_mod_params_t mod_test;
     uint32_t pkt_toa_ms;
     uint8_t frames_per_packet;
-    uint32_t codec2_production_time;
-    uint8_t codec2_frame_period_ms = 1000 / frames_per_sec;
+    uint32_t opus_production_time;
+    uint8_t opus_frame_period_ms = 1000 / frames_per_sec;
     uint8_t max_sf;
 
     printf("\r\n=== Streaming Timing Analysis ===\r\n");
     printf("SF:%u BW:%ukHz frame_size:%u bytes\r\n",
            lora_mod_params.sf, get_bw_khz_lr20xx(), _bytes_per_frame);
-    printf("Codec2 frame period: %u ms\r\n", codec2_frame_period_ms);
+    printf("Opus frame period: %u ms\r\n", opus_frame_period_ms);
 
     /* Calculate packet timing */
     pkt.pld_len_in_bytes = lora_payload_length;
     pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
     frames_per_packet = lora_payload_length / _bytes_per_frame;
-    codec2_production_time = frames_per_packet * codec2_frame_period_ms;
+    opus_production_time = frames_per_packet * opus_frame_period_ms;
 
     printf("Packet: %u bytes = %u frames\r\n", lora_payload_length, frames_per_packet);
     printf("Packet time-on-air: %lu ms\r\n", pkt_toa_ms);
-    printf("Codec2 production time for packet: %lu ms\r\n", codec2_production_time);
+    printf("Opus production time for packet: %lu ms\r\n", opus_production_time);
 
-    if (pkt_toa_ms <= codec2_production_time) {
+    if (pkt_toa_ms <= opus_production_time) {
         printf("OK: Encoder keeps up (margin: %lu ms)\r\n",
-               codec2_production_time - pkt_toa_ms);
+               opus_production_time - pkt_toa_ms);
     } else {
         printf("WARNING: packet_toa > production_time - buffer will drain!\r\n");
     }
@@ -673,13 +673,13 @@ void print_streaming_timing_analysis(void)
         mod_test.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(sf, mod_test.bw);
         test_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &mod_test);
 
-        if (test_toa <= codec2_production_time) {
+        if (test_toa <= opus_production_time) {
             printf("SF%u: %lu ms - OK (margin %lu ms)\r\n",
-                   sf, test_toa, codec2_production_time - test_toa);
+                   sf, test_toa, opus_production_time - test_toa);
             max_sf = sf;
         } else {
             printf("SF%u: %lu ms - TOO SLOW (exceeds by %lu ms)\r\n",
-                   sf, test_toa, test_toa - codec2_production_time);
+                   sf, test_toa, test_toa - opus_production_time);
         }
     }
 
@@ -699,7 +699,7 @@ void print_streaming_timing_analysis(void)
     /* Search from largest to smallest to find max packet size for SF12 */
     for (uint8_t num_frames = 255 / _bytes_per_frame; num_frames >= 1; num_frames--) {
         uint8_t test_bytes = num_frames * _bytes_per_frame;
-        uint32_t test_production = num_frames * codec2_frame_period_ms;
+        uint32_t test_production = num_frames * opus_frame_period_ms;
         uint32_t test_toa;
 
         pkt.pld_len_in_bytes = test_bytes;
@@ -742,17 +742,17 @@ int adjust_sf_for_streaming(void)
     lr20xx_radio_lora_mod_params_t test_mod = lora_mod_params;
     uint32_t pkt_toa_ms;
     uint8_t frames_per_packet;
-    uint32_t codec2_production_time;
-    uint8_t codec2_frame_period_ms = 1000 / frames_per_sec;
+    uint32_t opus_production_time;
+    uint8_t opus_frame_period_ms = 1000 / frames_per_sec;
     uint8_t original_sf = lora_mod_params.sf;
     int32_t margin;
 
     /* Calculate current timing */
     pkt.pld_len_in_bytes = lora_payload_length;
     frames_per_packet = lora_payload_length / _bytes_per_frame;
-    codec2_production_time = frames_per_packet * codec2_frame_period_ms;
+    opus_production_time = frames_per_packet * opus_frame_period_ms;
     pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
-    margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+    margin = (int32_t)opus_production_time - (int32_t)pkt_toa_ms;
 
     /* Check if current SF is feasible with minimum margin */
     if (margin < MIN_STREAMING_MARGIN_MS) {
@@ -765,7 +765,7 @@ int adjust_sf_for_streaming(void)
             lora_mod_params.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(
                 lora_mod_params.sf, lora_mod_params.bw);
             pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
-            margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+            margin = (int32_t)opus_production_time - (int32_t)pkt_toa_ms;
 
             if (margin >= MIN_STREAMING_MARGIN_MS) {
                 /* Found feasible SF with sufficient margin - apply it */
@@ -788,7 +788,7 @@ int adjust_sf_for_streaming(void)
         test_mod.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(
             test_mod.sf, test_mod.bw);
         pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &test_mod);
-        margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+        margin = (int32_t)opus_production_time - (int32_t)pkt_toa_ms;
 
         if (margin < MIN_STREAMING_MARGIN_MS) {
             /* This SF is too slow - use the previous one */
@@ -802,7 +802,7 @@ int adjust_sf_for_streaming(void)
     if (lora_mod_params.sf != original_sf) {
         ASSERT_LR20XX_RC(lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params));
         pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
-        margin = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+        margin = (int32_t)opus_production_time - (int32_t)pkt_toa_ms;
         printf("Adjusted SF%u->SF%u (TOA=%lums, margin=%ldms)\r\n",
                original_sf, lora_mod_params.sf, pkt_toa_ms, margin);
         return 1;  /* SF was adjusted */
@@ -825,25 +825,25 @@ void calculate_streaming_config(void)
     lr20xx_radio_lora_pkt_params_t pkt = lora_pkt_params;
     lr20xx_radio_lora_mod_params_t mod_test;
     uint32_t pkt_toa_ms;
-    uint32_t codec2_production_time;
-    uint8_t codec2_frame_period_ms = 1000 / frames_per_sec;
+    uint32_t opus_production_time;
+    uint8_t opus_frame_period_ms = 1000 / frames_per_sec;
 
     streaming_cfg.frames_per_packet = lora_payload_length / _bytes_per_frame;
 
     /* Calculate timing at current settings */
     pkt.pld_len_in_bytes = lora_payload_length;
     pkt_toa_ms = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
-    codec2_production_time = streaming_cfg.frames_per_packet * codec2_frame_period_ms;
-    streaming_cfg.margin_ms = (int32_t)codec2_production_time - (int32_t)pkt_toa_ms;
+    opus_production_time = streaming_cfg.frames_per_packet * opus_frame_period_ms;
+    streaming_cfg.margin_ms = (int32_t)opus_production_time - (int32_t)pkt_toa_ms;
 
     if (streaming_cfg.margin_ms >= 0) {
         /* Check if pipelining is possible.
          * Pipelining works when we can encode the NEXT packet during CURRENT TX.
-         * Time to encode next packet: frames_per_packet * frame_period (= codec2_production_time)
+         * Time to encode next packet: frames_per_packet * frame_period (= opus_production_time)
          * Time available during TX: pkt_toa
-         * Pipelining works when: pkt_toa >= codec2_production_time
+         * Pipelining works when: pkt_toa >= opus_production_time
          */
-        if (pkt_toa_ms >= codec2_production_time) {
+        if (pkt_toa_ms >= opus_production_time) {
             /* TX is slower than encoding - true streaming possible */
             streaming_cfg.streaming_feasible = 1;
             streaming_cfg.recommended_sf = lora_mod_params.sf;
@@ -872,10 +872,10 @@ void calculate_streaming_config(void)
             mod_test.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(sf, mod_test.bw);
             test_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &mod_test);
 
-            if (test_toa <= codec2_production_time) {
+            if (test_toa <= opus_production_time) {
                 streaming_cfg.recommended_sf = sf;
                 streaming_cfg.streaming_feasible = 1;
-                streaming_cfg.margin_ms = (int32_t)codec2_production_time - (int32_t)test_toa;
+                streaming_cfg.margin_ms = (int32_t)opus_production_time - (int32_t)test_toa;
                 break;
             }
         }
@@ -889,7 +889,7 @@ void calculate_streaming_config(void)
             mod_test.sf = streaming_cfg.recommended_sf;
             mod_test.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(mod_test.sf, mod_test.bw);
             uint32_t rec_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &mod_test);
-            uint8_t frames_during_tx = rec_toa / codec2_frame_period_ms;
+            uint8_t frames_during_tx = rec_toa / opus_frame_period_ms;
             if (frames_during_tx >= streaming_cfg.frames_per_packet)
                 streaming_cfg.min_initial_frames = 2;  /* Can encode all frames during TX */
             else
@@ -905,7 +905,7 @@ void calculate_streaming_config(void)
     if (streaming_cfg.recommended_sf != lora_mod_params.sf) {
         /* Current SF is different - recalculate min_initial_frames for actual SF */
         uint32_t actual_toa = lr20xx_radio_lora_get_time_on_air_in_ms(&pkt, &lora_mod_params);
-        uint32_t actual_production = streaming_cfg.frames_per_packet * codec2_frame_period_ms;
+        uint32_t actual_production = streaming_cfg.frames_per_packet * opus_frame_period_ms;
 
         if (actual_toa > actual_production) {
             /* Current SF is too slow for streaming - need full packet before TX */
@@ -916,7 +916,7 @@ void calculate_streaming_config(void)
         } else {
             /* Calculate min_initial_frames for current SF using correct formula:
              * min_init = frames_per_packet - frames_during_tx */
-            uint8_t frames_during_tx = actual_toa / codec2_frame_period_ms;
+            uint8_t frames_during_tx = actual_toa / opus_frame_period_ms;
             if (frames_during_tx >= streaming_cfg.frames_per_packet)
                 streaming_cfg.min_initial_frames = 2;  /* Can encode all frames during TX */
             else
