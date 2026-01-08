@@ -39,7 +39,7 @@ If needed to select different hardware audio rate, it must be selected prior to 
 
 Latency of playback is adjusted on LCD-touchscreen.  Long latency here is required to properly hear speech quality of vocoder.
 ### lora_transceiver
-Used for testing codec2 over sx1272/sx1276/sx1261/sx1262.   LoRa shield is auto-detected on startup, allowing different radio device to be plugged in and quickly compared.  Upon startup, touchscreen awaits  user selection of codec2 mode (bitrate). To change codec2 rate, reset is required using black button.
+Used for testing Opus vocoder over sx1272/sx1276/sx1261/sx1262/LR2021.   LoRa shield is auto-detected on startup, allowing different radio device to be plugged in and quickly compared.  Upon startup, touchscreen awaits user selection of Opus mode (bitrate). To change Opus rate, reset is required using black button.
 
 During operation, the touchscreen permits adjustment of LoRa bandwidth, LoRa spreading factor and microphone gain.  Bottom of LCD shows radio mode (tx or rx) along with TX duty cycle or RX RSSI/SNR.  LoRa payload length is also adjustable, but both sides of link must be adjusted to the same.
 
@@ -54,46 +54,53 @@ in radio.c:
 ``TX_DBM`` and ``CF_HZ`` could be adjustable by LCD-touchscreen in future, if desired?
 
 variables in main.c:
-* ``lora_payload_length``: length of LoRa packet, needs to hold even number of codec2 frames.
+* ``lora_payload_length``: length of LoRa packet, needs to hold integer number of Opus frames.
 * ``sf_at_500KHz``: spreading factor is decremented when bandwith reduced to keep same data-rate, but SF is manually adjusted by LCD-touchscreen.
 
 
-## LoRa operation with codec2
+## LoRa operation with Opus
 
-### Codec2 mode parameters
+### Opus mode parameters
 
-| codec2 mode | samples/frame | frame period (ms) | encoded bytes/frame | frames/sec |
-|-------------|---------------|-------------------|---------------------|------------|
-| 3200 | 160 | 20 | 8 | 50 |
-| 2400 | 160 | 20 | 6 | 50 |
-| 1600 | 320 | 40 | 8 | 25 |
-| 1400 | 320 | 40 | 7 | 25 |
-| 1300 | 320 | 40 | 6.5 (13 bytes/2 frames) | 25 |
-| 1200 | 320 | 40 | 6 | 25 |
-| 700C | 320 | 40 | 3.5 (7 bytes/2 frames) | 25 |
+| Opus mode | samples/frame | frame period (ms) | encoded bytes/frame | frames/sec |
+|-----------|---------------|-------------------|---------------------|------------|
+| 6K  | 320 | 40 | 30  | 25 |
+| 8K  | 320 | 40 | 40  | 25 |
+| 12K | 320 | 40 | 60  | 25 |
+| 16K | 320 | 40 | 80  | 25 |
+| 24K | 320 | 40 | 120 | 25 |
+| 32K | 320 | 40 | 160 | 25 |
+| 48K | 320 | 40 | 240 | 25 |
+| 64K | 320 | 40 | 320 | 25 |
+| 96K | 320 | 40 | 480 | 25 |
 
-### Default LoRa settings (LR20xx, 500kHz BW)
+**Note:** Audio sample rate is 8000 Hz. Frame period is fixed at 40ms for all Opus modes.
 
-| codec2 mode | auto SF | payload (bytes) | frames/pkt | production (ms) | TOA (ms) | margin (ms) |
-|-------------|---------|-----------------|------------|-----------------|----------|-------------|
-| 3200 | 8 | 24 | 3 | 60 | 26 | 34 |
-| 2400 | 9 | 36 | 6 | 120 | 62 | 58 |
-| 1600 | 11 | 72 | 9 | 360 | 350 | 10 |
-| 1400 | 11 | 49 | 7 | 280 | 268 | 12 |
-| 1300 | 9 | 26 | 2 | 80 | 52 | 28 |
-| 1200 | 11 | 36 | 6 | 240 | 227 | 13 |
-| 700C | 11 | 49 | 7 | 280 | 268 | 12 |
+### Default LoRa settings (LR20xx)
+
+| Opus mode | BW (kHz) | auto SF | payload (bytes) | frames/pkt | production (ms) | TOA (ms) | margin (ms) |
+|-----------|----------|---------|-----------------|------------|-----------------|----------|-------------|
+| 6K  | 500  | 9 | 240 | 8 | 320 | 298 | 22 |
+| 8K  | 500  | 8 | 240 | 6 | 240 | 164 | 76 |
+| 12K | 500  | 7 | 240 | 4 | 160 | 94  | 66 |
+| 16K | 500  | 7 | 240 | 3 | 120 | 94  | 26 |
+| 24K | 500  | 6 | 240 | 2 | 80  | 55  | 25 |
+| 32K | 500  | 5 | 160 | 1 | 40  | 22  | 18 |
+| 48K | 812  | 5 | 240 | 1 | 40  | 20  | 20 |
+| 64K | 1000 | 5 | 255 | - | -   | -   | -  |
+| 96K | 1000 | 5 | 255 | - | -   | -   | -  |
 
 **Notes:**
-- **Auto SF** = SF automatically selected to ensure minimum 10ms timing margin
+- **Auto SF** = SF automatically adjusted to ensure minimum 10ms timing margin
+- **BW** = Bandwidth. Higher rates use wider bandwidth for faster transmission.
 - **TOA** = Time On Air (packet transmission duration at auto SF)
-- **Production** = frames/pkt × frame period. Streaming requires TOA ≤ production.
+- **Production** = frames/pkt × 40ms frame period. Streaming requires TOA ≤ production.
 - **Margin** = production - TOA. Minimum 10ms required for reliable streaming.
-- 1300 and 700C use dual-frame encoding (2 codec2 frames per radio frame). frames/pkt counts radio frames.
+- 64K and 96K require frame splitting across multiple packets (experimental).
 
 ### General LoRa considerations
 
-LoRa data rate selection is only possible in steps by a factor of two.  Codec2 bit-rate change will affect LoRa packet duty cycle.  When duty cycle is under 50%, the LoRa data-rate can be reduced (bandwidth reduced or SF increased).  If packet duty cycle is over 100%, then LoRa data-rate must be increased to faster.  Typical 2.5 to 2.7dB change in link budget for each step of LoRa data-rate.
+LoRa data rate selection is only possible in steps by a factor of two.  Opus bit-rate change will affect LoRa packet duty cycle.  When duty cycle is under 50%, the LoRa data-rate can be reduced (bandwidth reduced or SF increased).  If packet duty cycle is over 100%, then LoRa data-rate must be increased to faster.  Typical 2.5 to 2.7dB change in link budget for each step of LoRa data-rate.
 
 Latency across the radio link is due to LoRa packet duration.
 
@@ -132,15 +139,17 @@ The LoRa bandwidth can be adjusted at runtime using serial commands. SF is autom
 
 The firmware auto-adjusts SF to ensure streaming is feasible with sufficient timing margin (minimum 10ms). When bandwidth increases, SF is increased to maximize range. When bandwidth decreases, SF is reduced to maintain streaming feasibility.
 
-| codec2 mode | 1000kHz | 812kHz | 500kHz | 250kHz | 125kHz |
-|-------------|---------|--------|--------|--------|--------|
-| 3200 | SF10 | SF9 | SF8 | SF7 | SF6 |
-| 2400 | SF10 | SF10 | SF9 | SF8 | SF7 |
-| 1600 | SF12 | SF11 | SF11 | SF9 | SF8 |
-| 1400 | SF12 | SF11 | SF11 | SF9 | SF8 |
-| 1300 | SF10 | SF10 | SF9 | SF8 | SF7 |
-| 1200 | SF12 | SF11 | SF11 | SF10 | SF8 |
-| 700C | SF12 | SF11 | SF11 | SF9 | SF8 |
+| Opus mode | Default BW | Auto SF | Alternative SF at other BW |
+|-----------|------------|---------|----------------------------|
+| 6K  | 500kHz  | SF9 | SF10@812, SF11@1000 |
+| 8K  | 500kHz  | SF8 | SF9@812, SF10@1000  |
+| 12K | 500kHz  | SF7 | SF8@812, SF9@1000   |
+| 16K | 500kHz  | SF7 | SF8@812, SF8@1000   |
+| 24K | 500kHz  | SF6 | SF7@812, SF7@1000   |
+| 32K | 500kHz  | SF5 | SF6@812, SF6@1000   |
+| 48K | 812kHz  | SF5 | SF6@1000            |
+| 64K | 1000kHz | SF5 | (experimental)      |
+| 96K | 1000kHz | SF5 | (experimental)      |
 
 **Link Budget Trade-offs:**
 - Higher BW + higher SF = lower latency, similar range
@@ -157,7 +166,7 @@ When using the LR2021 radio (build with `-DRADIO=LR2021`), the firmware supports
 #### How it works
 
 On startup, the firmware analyzes timing feasibility and automatically adjusts SF if the margin is less than 10ms:
-- Calculates packet time-on-air vs codec2 frame production time
+- Calculates packet time-on-air vs Opus frame production time
 - Determines if streaming is feasible at current SF/BW settings
 - Recommends optimal SF if current settings are too slow
 - Calculates minimum initial frames needed before starting TX
@@ -177,7 +186,7 @@ Press 'T' via serial to enable test mode, which sends sequence numbers instead o
 - 'r': Stop TX
 - '?': Show stats (frames received, dropped, duplicates, gaps)
 
-The test script `test_radio_link.sh` automates testing across all codec2 rates.
+The test script `test_radio_link.sh` automates testing across all Opus rates.
 
 ### FHSS (Frequency Hopping)
 
