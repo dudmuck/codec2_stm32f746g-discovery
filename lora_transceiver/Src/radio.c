@@ -97,7 +97,7 @@ const RadioEvents_t rev = {
     /* CadDone  */          NULL
 };
 
-#define LORA_BW_KHZ             500
+extern uint16_t lora_bw_khz;
 #define TX_DBM                  /*20*/ -5		/* TODO low power used for bench testing */
 #define CF_HZ               917600000
 
@@ -165,7 +165,7 @@ static void spi_begin()
     HAL_GPIO_Init(SPIx_MOSI_GPIO_PORT, &GPIO_InitStructure);
     
     SpiHandle.Instance               = SPIx;
-    SpiHandle.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+    SpiHandle.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;  /* 54MHz/8 = 6.75MHz (compatible with 25Msps logic analyzer) */
     SpiHandle.Init.Direction         = SPI_DIRECTION_2LINES;
     SpiHandle.Init.CLKPhase          = SPI_PHASE_1EDGE;
     SpiHandle.Init.CLKPolarity       = SPI_POLARITY_LOW;
@@ -217,7 +217,7 @@ void start_radio()
     lorahal.init(&rev);
 
     lorahal.standby();
-    lorahal.loRaModemConfig(LORA_BW_KHZ, sf_at_500KHz, 1);
+    lorahal.loRaModemConfig(lora_bw_khz, sf_at_500KHz, 1);
     lorahal.setChannel(CF_HZ);
 
     lorahal.set_tx_dbm(TX_DBM);

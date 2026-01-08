@@ -44,6 +44,7 @@ uint8_t _bytes_per_frame;
 uint8_t frame_length_bytes;
 uint8_t lora_payload_length;
 uint8_t sf_at_500KHz;
+uint16_t lora_bw_khz;
 unsigned inter_pkt_timeout;
 
 /* SF adjustment for different bandwidths.
@@ -485,49 +486,56 @@ int main(void)
             case OPUS_WRAPPER_MODE_6K:
                 lora_payload_length = 240;  // 8 frames @ 30 bytes each
                 sf_at_500KHz = 10;
+                lora_bw_khz = 500;
                 str = "6K";
                 break;
             case OPUS_WRAPPER_MODE_8K:
                 lora_payload_length = 240;  // 6 frames @ 40 bytes each
                 sf_at_500KHz = 10;
+                lora_bw_khz = 500;
                 str = "8K";
                 break;
             case OPUS_WRAPPER_MODE_12K:
                 lora_payload_length = 240;  // 4 frames @ 60 bytes each
                 sf_at_500KHz = 11;
+                lora_bw_khz = 500;
                 str = "12K";
                 break;
             case OPUS_WRAPPER_MODE_16K:
                 lora_payload_length = 240;  // 3 frames @ 80 bytes each
                 sf_at_500KHz = 11;
+                lora_bw_khz = 500;
                 str = "16K";
                 break;
             case OPUS_WRAPPER_MODE_24K:
                 lora_payload_length = 240;  // 2 frames @ 120 bytes each
                 sf_at_500KHz = 12;
+                lora_bw_khz = 500;
                 str = "24K";
                 break;
             case OPUS_WRAPPER_MODE_32K:
                 lora_payload_length = 160;  // 1 frame @ 160 bytes
                 sf_at_500KHz = 9;           // need faster SF for higher rate
+                lora_bw_khz = 500;
                 str = "32K";
                 break;
             case OPUS_WRAPPER_MODE_48K:
                 lora_payload_length = 240;  // 1 frame @ 240 bytes
                 sf_at_500KHz = 8;
+                lora_bw_khz = 812;          // higher BW for faster TX
                 str = "48K";
                 break;
             case OPUS_WRAPPER_MODE_64K:
-                /* Frame size 320 bytes > max LoRa payload 255 - NOT SUPPORTED */
-                lora_payload_length = 255;
+                lora_payload_length = 255;  // 320 bytes/frame, send partial
                 sf_at_500KHz = 7;
-                str = "64K-UNSUPPORTED";
+                lora_bw_khz = 1000;         // highest BW for 64K
+                str = "64K";
                 break;
             case OPUS_WRAPPER_MODE_96K:
-                /* Frame size 480 bytes > max LoRa payload 255 - NOT SUPPORTED */
-                lora_payload_length = 255;
+                lora_payload_length = 255;  // 480 bytes/frame, send partial
                 sf_at_500KHz = 5;
-                str = "96K-UNSUPPORTED";
+                lora_bw_khz = 1000;         // highest BW for 96K
+                str = "96K";
                 break;
             default: str = NULL;
         } // ..switch (selected_bitrate)

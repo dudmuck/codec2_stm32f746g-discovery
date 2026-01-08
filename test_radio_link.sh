@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# Radio link sequence test for all codec2 rates
+# Radio link sequence test for all Opus rates
 # Tests that encoded frames are correctly sent/received over LoRa link
 #
 # Usage: ./test_radio_link.sh [duration_seconds] [rate]
 #   duration_seconds: test duration per rate (default: 10)
-#   rate: specific rate to test (3200,2400,1600,1400,1300,1200,700C)
+#   rate: specific rate to test (6K,8K,12K,16K,24K,32K,48K)
 #         if omitted, tests all rates
 #
 
@@ -17,25 +17,26 @@ SINGLE_RATE=${2:-""}    # Optional: test only this rate
 LOG_DIR="test_logs"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# Codec2 rates to test: index -> name
+# Opus rates to test: index -> name
 declare -A RATES
-RATES[0]="3200"
-RATES[1]="2400"
-RATES[2]="1600"
-RATES[3]="1400"
-RATES[4]="1300"
-RATES[5]="1200"
-RATES[8]="700C"
+RATES[0]="6K"
+RATES[1]="8K"
+RATES[2]="12K"
+RATES[3]="16K"
+RATES[4]="24K"
+RATES[5]="32K"
+RATES[6]="48K"
+# Note: 64K (7) and 96K (8) exceed LoRa max payload size (255 bytes)
 
 # Reverse lookup: name -> index
 declare -A RATE_IDX
-RATE_IDX["3200"]=0
-RATE_IDX["2400"]=1
-RATE_IDX["1600"]=2
-RATE_IDX["1400"]=3
-RATE_IDX["1300"]=4
-RATE_IDX["1200"]=5
-RATE_IDX["700C"]=8
+RATE_IDX["6K"]=0
+RATE_IDX["8K"]=1
+RATE_IDX["12K"]=2
+RATE_IDX["16K"]=3
+RATE_IDX["24K"]=4
+RATE_IDX["32K"]=5
+RATE_IDX["48K"]=6
 
 # Results tracking
 declare -A RESULTS
@@ -90,12 +91,12 @@ reset_board() {
     sleep 2  # Wait for reset and boot
 }
 
-# Select codec2 rate (at startup screen)
+# Select Opus rate (at startup screen)
 select_rate() {
     local dev=$1
     local rate_idx=$2
     send_cmd "$dev" "$rate_idx"
-    sleep 1  # Wait for codec2 init
+    sleep 1  # Wait for Opus init
 }
 
 run_test() {
@@ -106,7 +107,7 @@ run_test() {
 
     echo ""
     echo "========================================"
-    echo "Testing codec2 rate: $rate_name (index $rate_idx)"
+    echo "Testing Opus rate: $rate_name (index $rate_idx)"
     echo "========================================"
 
     # Reset both boards
@@ -207,7 +208,7 @@ print_summary() {
     echo "Duration per rate: ${TEST_DURATION}s"
     echo ""
 
-    for rate_idx in 0 1 2 3 4 5 8; do
+    for rate_idx in 0 1 2 3 4 5 6; do
         local rate_name=${RATES[$rate_idx]}
         local result=${RESULTS[$rate_name]}
         # Only print if this rate was tested
@@ -241,7 +242,7 @@ echo "Test duration: ${TEST_DURATION}s per rate"
 if [ -n "$SINGLE_RATE" ]; then
     if [ -z "${RATE_IDX[$SINGLE_RATE]}" ]; then
         echo -e "${RED}Error: Invalid rate '$SINGLE_RATE'${NC}"
-        echo "Valid rates: 3200, 2400, 1600, 1400, 1300, 1200, 700C"
+        echo "Valid rates: 6K, 8K, 12K, 16K, 24K, 32K, 48K"
         exit 1
     fi
     echo "Testing rate: $SINGLE_RATE only"
@@ -260,7 +261,7 @@ if [ -n "$SINGLE_RATE" ]; then
     run_test ${RATE_IDX[$SINGLE_RATE]}
 else
     # Test all rates
-    for rate_idx in 0 1 2 3 4 5 8; do
+    for rate_idx in 0 1 2 3 4 5 6; do
         run_test $rate_idx
     done
 fi

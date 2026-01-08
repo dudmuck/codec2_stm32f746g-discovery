@@ -106,6 +106,7 @@ bool LR20xx_service()
                     } else {
                         /* Normal RX - read entire packet */
                         ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, LR20xx_rx_buf, size) );
+                        rx_fifo_read_idx = size;  /* Update index so streaming_rx_decode() sees all data */
                     }
                     if (LR20xx_rxDone) {
                         lr20xx_radio_lora_packet_status_t pkt_status = { 0 };
