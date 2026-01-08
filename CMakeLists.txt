@@ -8,7 +8,7 @@
 set(ARM_GCC_BIN "" CACHE STRING "Path to the bin directory of your arm-eabi-none-gcc (optional)")
 # Set default toolchain file for cross-compilation (must be before project())
 if(NOT CMAKE_TOOLCHAIN_FILE)
-	set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/codec2/stm32/cmake/STM32_Toolchain.cmake" CACHE FILEPATH "Toolchain file" FORCE)
+	set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/STM32_Toolchain.cmake" CACHE FILEPATH "Toolchain file" FORCE)
 endif()
 project(stm32f7 C ASM)
 
@@ -43,7 +43,7 @@ else()
 	add_definitions(-DGIT_HASH="None")
 endif()
 
-include(gencodebooks.cmake)
+# Note: gencodebooks.cmake removed - this branch uses Opus instead of codec2
 
 #
 # Prevent in-source builds
@@ -163,63 +163,9 @@ macro(add_mapped_executable target)
 endmacro()
 
 include(CTest)
-include_directories(codec2/src ../unittest ${PROJECT_BINARY_DIR})
+include_directories(${PROJECT_BINARY_DIR})
 
-# Codec 2
-
-# Output path is such that #include <codec2/version.h> in codec2.h works
-set(CODEC2_VERSION_PATH "${PROJECT_BINARY_DIR}/codec2")
-configure_file ("${PROJECT_SOURCE_DIR}/codec2/cmake/version.h.in"
-		"${CODEC2_VERSION_PATH}/version.h" )
-
-
-set(CODEC2_SRC codec2/src)
-set(CODEC2_GEN_CODEBOOK_SRC ../build/src)
-set(CODEC2_SRCS
-${CODEC2_SRC}/lpc.c
-${CODEC2_SRC}/nlp.c
-${CODEC2_SRC}/postfilter.c
-${CODEC2_SRC}/sine.c
-${CODEC2_SRC}/codec2.c
-${CODEC2_SRC}/codec2_fft.c
-${CODEC2_SRC}/gp_interleaver.c
-${CODEC2_SRC}/interldpc.c
-${CODEC2_SRC}/kiss_fft.c
-${CODEC2_SRC}/kiss_fftr.c
-${CODEC2_SRC}/interp.c
-${CODEC2_SRC}/lsp.c
-${CODEC2_SRC}/ofdm.c
-${CODEC2_SRC}/phase.c
-${CODEC2_SRC}/quantise.c
-${CODEC2_SRC}/pack.c
-${CODEC2_SRC}/dump.c
-${CODEC2_SRC}/cohpsk.c
-${CODEC2_SRC}/fdmdv.c
-${CODEC2_SRC}/freedv_api.c
-${CODEC2_SRC}/filter.c
-${CODEC2_SRC}/varicode.c
-${CODEC2_SRC}/golay23.c
-${CODEC2_SRC}/freedv_data_channel.c
-${CODEC2_SRC}/newamp1.c
-${CODEC2_SRC}/mbest.c
-${CODEC2_SRC}/HRA_112_112.c
-${CODEC2_SRC}/linreg.c
-${CODEC2_SRC}/mpdecode_core.c
-${CODEC2_SRC}/phi0.c
-${CODEC2_SRC}/HRAb_396_504.c
-codebook.c
-codebookd.c
-codebookjvm.c
-codebookge.c
-codebooknewamp1_energy.c
-codebooknewamp1.c
-codebooknewamp2.c
-codebooknewamp2_energy.c
-)
-
-add_library(codec2 STATIC ${CODEC2_SRCS})
-add_library(codec2_prof STATIC ${CODEC2_SRCS})
-target_compile_definitions(codec2_prof PRIVATE PROFILE)
+# Note: codec2 library removed - this branch uses Opus instead
 
 set(SYSTEM_SRCS
 	startup_stm32f746xx.s

@@ -108,6 +108,15 @@ bool LR20xx_service()
                         ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, LR20xx_rx_buf, size) );
                         rx_fifo_read_idx = size;  /* Update index so streaming_rx_decode() sees all data */
                     }
+                    /* Check if another packet started arriving while reading FIFO */
+                    {
+                        uint16_t fifo_level_after;
+                        if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level_after) == LR20XX_STATUS_OK) {
+                            if (fifo_level_after > 0) {
+                                printf("\e[33mWARN: RX FIFO %u bytes after RX_DONE read\e[0m\r\n", fifo_level_after);
+                            }
+                        }
+                    }
                     if (LR20xx_rxDone) {
                         lr20xx_radio_lora_packet_status_t pkt_status = { 0 };
                         ASSERT_LR20XX_RC( lr20xx_radio_lora_get_packet_status(NULL, &pkt_status) );

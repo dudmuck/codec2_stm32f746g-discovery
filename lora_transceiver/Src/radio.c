@@ -165,7 +165,7 @@ static void spi_begin()
     HAL_GPIO_Init(SPIx_MOSI_GPIO_PORT, &GPIO_InitStructure);
     
     SpiHandle.Instance               = SPIx;
-    SpiHandle.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;  /* 54MHz/8 = 6.75MHz (compatible with 25Msps logic analyzer) */
+    SpiHandle.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;  /* 54MHz/4 = 13.5MHz for faster radio access */
     SpiHandle.Init.Direction         = SPI_DIRECTION_2LINES;
     SpiHandle.Init.CLKPhase          = SPI_PHASE_1EDGE;
     SpiHandle.Init.CLKPolarity       = SPI_POLARITY_LOW;

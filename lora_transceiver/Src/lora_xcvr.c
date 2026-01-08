@@ -96,6 +96,9 @@ uint32_t last_rx_pkt_tick;      // timestamp of last received packet
 extern uint32_t get_fifo_rx_irq_count(void);
 #endif
 
+/* For touchscreen throttling in high-rate modes */
+extern uint8_t frames_per_sec;
+
 volatile uint32_t cycleDur;
 volatile uint32_t cycleStartAt;
 
@@ -368,7 +371,7 @@ void svc_uart()
                rx_frame_count, rx_dropped_count, rx_duplicate_count, rx_gap_count,
                rx_overflow_count, rx_overflow_bytes);
         printf("enc_max:%lu ms overruns:%lu (budget %dms)\r\n",
-               enc_time_max, dma_overrun_count, OPUS_WRAPPER_FRAME_MS);
+               enc_time_max, dma_overrun_count, 1000 / frames_per_sec);
 #ifdef ENABLE_LR20XX
         printf("  fifo_rx_irqs=%lu\r\n", get_fifo_rx_irq_count());
 #endif
@@ -1125,17 +1128,26 @@ void AudioLoopback_demo(void)
     currently_decoding = 0;
     rx_size = -1;
 
+    /* Touchscreen polling interval: longer for high-rate modes (64K/96K with 60ms frames)
+     * to ensure lorahal.service() is called with lowest latency */
+    uint32_t ts_poll_interval = (frames_per_sec < 20) ? 100 : 20;  /* ms */
+    uint32_t last_ts_poll = 0;
+
     while (1)
     {
         TS_StateTypeDef this_TS_State;
 
-        BSP_TS_GetState(&this_TS_State);
-        if (this_TS_State.touchDetected != prev_TS_State.touchDetected ||
-            this_TS_State.touchX != prev_TS_State.touchY ||
-            this_TS_State.touchY != prev_TS_State.touchY)
-        {
-            radio_screen(&this_TS_State);
-            memcpy(&prev_TS_State, &this_TS_State, sizeof(TS_StateTypeDef));
+        /* Throttle touchscreen polling to reduce latency for radio service */
+        if ((uwTick - last_ts_poll) >= ts_poll_interval) {
+            last_ts_poll = uwTick;
+            BSP_TS_GetState(&this_TS_State);
+            if (this_TS_State.touchDetected != prev_TS_State.touchDetected ||
+                this_TS_State.touchX != prev_TS_State.touchY ||
+                this_TS_State.touchY != prev_TS_State.touchY)
+            {
+                radio_screen(&this_TS_State);
+                memcpy(&prev_TS_State, &this_TS_State, sizeof(TS_StateTypeDef));
+            }
         }
 
         if ((BSP_PB_GetState(BUTTON_KEY) == GPIO_PIN_SET) || uart_tx_active) {
@@ -1299,14 +1311,11 @@ skip_encode:
             extern volatile uint16_t rx_fifo_read_idx;
             extern volatile uint16_t rx_decode_idx;
 
-            /* If no data received yet, read directly from FIFO before processing */
+            /* Check if FIFO has data - would indicate new packet started arriving
+             * (RX_DONE handler in LR20xx_service() already read current packet's data) */
             uint16_t fifo_level;
             if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK && fifo_level > 0) {
-                uint16_t bytes_to_read = fifo_level;
-                if ((rx_fifo_read_idx + bytes_to_read) <= LR20XX_BUF_SIZE) {
-                    lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], bytes_to_read);
-                    rx_fifo_read_idx += bytes_to_read;
-                }
+                printf("\e[33mWARN: RX FIFO %u bytes at rx_size handling (next pkt?)\e[0m\r\n", fifo_level);
             }
             /* Decode frames only up to current packet size */
             uint16_t pkt_size = (uint16_t)rx_size;

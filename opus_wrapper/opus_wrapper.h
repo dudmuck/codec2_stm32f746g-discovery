@@ -52,28 +52,38 @@ extern "C" {
 #define OPUS_WRAPPER_SAMPLE_RATE_16K    16000
 #define OPUS_WRAPPER_SAMPLE_RATE_48K    48000
 
-/* Frame duration in ms */
-#define OPUS_WRAPPER_FRAME_MS       40
+/* Frame duration in ms (default, can be overridden per-mode) */
+#define OPUS_WRAPPER_FRAME_MS_DEFAULT   40
+#define OPUS_WRAPPER_FRAME_MS_MAX       60  /* Opus maximum */
 
 /* Samples per frame depends on sample rate (calculated at runtime) */
-#define OPUS_WRAPPER_SAMPLES_PER_FRAME_8K   (OPUS_WRAPPER_SAMPLE_RATE_8K * OPUS_WRAPPER_FRAME_MS / 1000)   /* 320 */
-#define OPUS_WRAPPER_SAMPLES_PER_FRAME_16K  (OPUS_WRAPPER_SAMPLE_RATE_16K * OPUS_WRAPPER_FRAME_MS / 1000)  /* 640 */
-#define OPUS_WRAPPER_SAMPLES_PER_FRAME_48K  (OPUS_WRAPPER_SAMPLE_RATE_48K * OPUS_WRAPPER_FRAME_MS / 1000)  /* 1920 */
+#define OPUS_WRAPPER_SAMPLES_PER_FRAME_8K   (OPUS_WRAPPER_SAMPLE_RATE_8K * OPUS_WRAPPER_FRAME_MS_DEFAULT / 1000)   /* 320 */
+#define OPUS_WRAPPER_SAMPLES_PER_FRAME_16K  (OPUS_WRAPPER_SAMPLE_RATE_16K * OPUS_WRAPPER_FRAME_MS_DEFAULT / 1000)  /* 640 */
+#define OPUS_WRAPPER_SAMPLES_PER_FRAME_48K  (OPUS_WRAPPER_SAMPLE_RATE_48K * OPUS_WRAPPER_FRAME_MS_DEFAULT / 1000)  /* 1920 */
 
 /* Maximum encoded frame size (for buffer allocation)
- * At 96kbps, 40ms frame: 96000 * 0.040 / 8 = 480 bytes */
-#define OPUS_WRAPPER_MAX_FRAME_BYTES    512
+ * At 96kbps, 60ms frame: 96000 * 0.060 / 8 = 720 bytes */
+#define OPUS_WRAPPER_MAX_FRAME_BYTES    768
 
 /* Opaque wrapper state structure */
 struct OPUS_WRAPPER;
 
 /*
- * Create an Opus wrapper instance
+ * Create an Opus wrapper instance with default frame duration (40ms)
  *
  * @param mode  One of OPUS_WRAPPER_MODE_* constants
  * @return      Pointer to wrapper state, or NULL on error
  */
 struct OPUS_WRAPPER *opus_wrapper_create(int mode);
+
+/*
+ * Create an Opus wrapper instance with custom frame duration
+ *
+ * @param mode      One of OPUS_WRAPPER_MODE_* constants
+ * @param frame_ms  Frame duration in ms (2.5, 5, 10, 20, 40, or 60)
+ * @return          Pointer to wrapper state, or NULL on error
+ */
+struct OPUS_WRAPPER *opus_wrapper_create_ex(int mode, int frame_ms);
 
 /*
  * Destroy an Opus wrapper instance
@@ -143,6 +153,14 @@ int opus_wrapper_get_mode(struct OPUS_WRAPPER *ow);
  * @return      Sample rate in Hz (8000, 16000, or 48000)
  */
 int opus_wrapper_get_sample_rate(struct OPUS_WRAPPER *ow);
+
+/*
+ * Get the frame duration for this wrapper instance
+ *
+ * @param ow    Wrapper state
+ * @return      Frame duration in ms (e.g., 40 or 60)
+ */
+int opus_wrapper_get_frame_ms(struct OPUS_WRAPPER *ow);
 
 /*
  * Get the encoder complexity setting

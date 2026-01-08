@@ -29,6 +29,7 @@ struct OPUS_WRAPPER {
     int mode;
     int bitrate;
     int sample_rate;
+    int frame_ms;
     int samples_per_frame;
 };
 
@@ -68,6 +69,11 @@ static int get_bandwidth_for_rate(int sample_rate)
 
 struct OPUS_WRAPPER *opus_wrapper_create(int mode)
 {
+    return opus_wrapper_create_ex(mode, OPUS_WRAPPER_FRAME_MS_DEFAULT);
+}
+
+struct OPUS_WRAPPER *opus_wrapper_create_ex(int mode, int frame_ms)
+{
     struct OPUS_WRAPPER *ow;
     int error;
     int bitrate;
@@ -76,6 +82,12 @@ struct OPUS_WRAPPER *opus_wrapper_create(int mode)
 
     /* Validate mode */
     if (mode < 0 || mode >= (int)NUM_MODES) {
+        return NULL;
+    }
+
+    /* Validate frame_ms - Opus supports 2.5, 5, 10, 20, 40, 60 ms */
+    if (frame_ms != 2 && frame_ms != 5 && frame_ms != 10 &&
+        frame_ms != 20 && frame_ms != 40 && frame_ms != 60) {
         return NULL;
     }
 
@@ -114,13 +126,14 @@ struct OPUS_WRAPPER *opus_wrapper_create(int mode)
         return NULL;
     }
 
-    /* Store mode, sample rate, and set bitrate */
+    /* Store mode, sample rate, frame duration, and set bitrate */
     ow->mode = mode;
     ow->sample_rate = sample_rate;
+    ow->frame_ms = frame_ms;
     bitrate = mode_bitrates[mode];
     ow->bitrate = bitrate;
     /* Calculate samples per frame: sample_rate * frame_ms / 1000 */
-    ow->samples_per_frame = sample_rate * OPUS_WRAPPER_FRAME_MS / 1000;
+    ow->samples_per_frame = sample_rate * frame_ms / 1000;
 
     /* Configure encoder */
     opus_encoder_ctl(ow->encoder, OPUS_SET_BITRATE(bitrate));
@@ -249,6 +262,14 @@ int opus_wrapper_get_sample_rate(struct OPUS_WRAPPER *ow)
         return OPUS_WRAPPER_SAMPLE_RATE_8K;  /* default */
     }
     return ow->sample_rate;
+}
+
+int opus_wrapper_get_frame_ms(struct OPUS_WRAPPER *ow)
+{
+    if (ow == NULL) {
+        return OPUS_WRAPPER_FRAME_MS_DEFAULT;  /* default */
+    }
+    return ow->frame_ms;
 }
 
 int opus_wrapper_get_complexity(struct OPUS_WRAPPER *ow)

@@ -434,7 +434,13 @@ int main(void)
                     BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
                     BSP_LCD_Clear(LCD_COLOR_WHITE);
                     BSP_LCD_SetTextColor(LCD_COLOR_DARKBLUE);
-                    ow = opus_wrapper_create(pressed_bitrate);
+                    /* Use 60ms frames for 64K and 96K modes to allow multi-packet TX */
+                    if (pressed_bitrate == OPUS_WRAPPER_MODE_64K ||
+                        pressed_bitrate == OPUS_WRAPPER_MODE_96K) {
+                        ow = opus_wrapper_create_ex(pressed_bitrate, 60);
+                    } else {
+                        ow = opus_wrapper_create(pressed_bitrate);
+                    }
                     if (ow == NULL) {
                         BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"opus_wrapper_create() failed", CENTER_MODE);
                         pressed_bitrate = -1;
@@ -526,13 +532,15 @@ int main(void)
                 str = "48K";
                 break;
             case OPUS_WRAPPER_MODE_64K:
-                lora_payload_length = 255;  // 320 bytes/frame, send partial
-                sf_at_500KHz = 7;
+                /* 60ms frame @ 64kbps = 480 bytes/frame, need 2 packets */
+                lora_payload_length = 240;  // 2 packets: 240 + 240 bytes
+                sf_at_500KHz = 6;
                 lora_bw_khz = 1000;         // highest BW for 64K
                 str = "64K";
                 break;
             case OPUS_WRAPPER_MODE_96K:
-                lora_payload_length = 255;  // 480 bytes/frame, send partial
+                /* 60ms frame @ 96kbps = 720 bytes/frame, need 3 packets */
+                lora_payload_length = 240;  // 3 packets: 240 + 240 + 240 bytes
                 sf_at_500KHz = 5;
                 lora_bw_khz = 1000;         // highest BW for 96K
                 str = "96K";
@@ -554,7 +562,7 @@ int main(void)
     nsamp = opus_wrapper_samples_per_frame(ow);
     nsamp_x2 = nsamp * 2;
     /* frames_per_sec = sample_rate / samples_per_frame = 1000 / frame_ms */
-    frames_per_sec = 1000 / OPUS_WRAPPER_FRAME_MS;  /* 25 fps for 40ms frames */
+    frames_per_sec = 1000 / opus_wrapper_get_frame_ms(ow);  /* 25 fps for 40ms, ~17 fps for 60ms */
 
     /* radio is started after bw/sf is known */
     start_radio();
@@ -563,9 +571,11 @@ int main(void)
      * Use the expected frame size for the selected mode. */
     {
         int bitrate = opus_wrapper_get_bitrate(ow);
+        int frame_ms = opus_wrapper_get_frame_ms(ow);
         /* bytes_per_frame = (bitrate * frame_duration_ms) / (8 * 1000)
-         * For 40ms frame: bytes = bitrate * 40 / 8000 = bitrate / 200 */
-        _bytes_per_frame = bitrate / 200;
+         * For 40ms frame: bytes = bitrate * 40 / 8000 = bitrate / 200
+         * For 60ms frame: bytes = bitrate * 60 / 8000 = bitrate / 133 */
+        _bytes_per_frame = (bitrate * frame_ms) / 8000;
     }
 
     printf("nsamp:%u, _bytes_per_frame:%u, frame_length_bytes:%u\r\n", nsamp, _bytes_per_frame, frame_length_bytes);
