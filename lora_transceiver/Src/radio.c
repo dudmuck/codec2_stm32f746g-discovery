@@ -42,6 +42,7 @@ volatile uint8_t fifo_tx_room;      /* flag: TX FIFO has room for more data */
 volatile uint8_t fifo_tx_underflow; /* flag: TX FIFO underflow occurred */
 volatile uint8_t fifo_rx_overflow;  /* flag: RX FIFO overflow occurred */
 volatile uint16_t rx_fifo_read_idx; /* how much data read from RX FIFO so far */
+volatile uint8_t fifo_rx_disabled;  /* flag: disable RX FIFO reads during packet transition */
 
 void fifoTxCB(lr20xx_radio_fifo_flag_t tx_fifo_flags)
 {
@@ -67,16 +68,26 @@ void fifoRxCB(lr20xx_radio_fifo_flag_t rx_fifo_flags)
     }
     if (rx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH) {
         fifo_rx_irq_count++;
-        /* RX FIFO has data available - read and decode early */
+        /* RX FIFO has data available - read all available data.
+         * For multi-packet mode (64K, 96K), one Opus frame spans multiple packets,
+         * so we can't wait for complete frames - just accumulate bytes.
+         * Limit reads to prevent garbage decode if noise triggers FIFO after TX ends:
+         * - Single-packet mode: limit to lora_payload_length
+         * - Multi-packet mode: allow full buffer to enable frame buffering */
         uint16_t fifo_level;
+        uint16_t max_read = (streaming_cfg.packets_per_frame > 1) ? LR20XX_BUF_SIZE : lora_payload_length;
         if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK) {
-            extern uint8_t _bytes_per_frame;
-            /* Read complete frames only */
-            uint16_t frames_available = fifo_level / _bytes_per_frame;
-            uint16_t bytes_to_read = frames_available * _bytes_per_frame;
-            if (bytes_to_read > 0 && (rx_fifo_read_idx + bytes_to_read) <= LR20XX_BUF_SIZE) {
-                lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], bytes_to_read);
-                rx_fifo_read_idx += bytes_to_read;
+            /* Don't read past max_read boundary */
+            if (rx_fifo_read_idx >= max_read) {
+                return;  /* Already have enough data, don't read noise */
+            }
+            uint16_t space_left = max_read - rx_fifo_read_idx;
+            if (fifo_level > space_left) {
+                fifo_level = space_left;  /* Limit to available space */
+            }
+            if (fifo_level > 0 && (rx_fifo_read_idx + fifo_level) <= LR20XX_BUF_SIZE) {
+                lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], fifo_level);
+                rx_fifo_read_idx += fifo_level;
             }
         }
     }

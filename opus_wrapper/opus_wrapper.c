@@ -282,6 +282,17 @@ int opus_wrapper_get_complexity(struct OPUS_WRAPPER *ow)
     return (int)complexity;
 }
 
+int opus_wrapper_set_complexity(struct OPUS_WRAPPER *ow, int complexity)
+{
+    if (ow == NULL || ow->encoder == NULL) {
+        return -1;
+    }
+    if (complexity < 0 || complexity > 10) {
+        return -1;
+    }
+    return opus_encoder_ctl(ow->encoder, OPUS_SET_COMPLEXITY(complexity));
+}
+
 int opus_wrapper_mode_sample_rate(int mode)
 {
     return get_mode_sample_rate(mode);

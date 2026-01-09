@@ -71,10 +71,12 @@ variables in main.c:
 | 24K | 320 | 40 | 120 | 25 |
 | 32K | 320 | 40 | 160 | 25 |
 | 48K | 320 | 40 | 240 | 25 |
-| 64K | 320 | 40 | 320 | 25 |
-| 96K | 320 | 40 | 480 | 25 |
+| 64K | 2880 | 60 | 480 | 16.7 |
+| 96K | 2880 | 60 | 720 | 16.7 |
 
-**Note:** Audio sample rate is 8000 Hz. Frame period is fixed at 40ms for all Opus modes.
+**Notes:**
+- Modes 6K-48K: Audio sample rate 8000 Hz, frame period 40ms.
+- Modes 64K-96K: Audio sample rate 48000 Hz, frame period 60ms (high-fidelity mode).
 
 ### Default LoRa settings (LR20xx)
 
@@ -87,16 +89,17 @@ variables in main.c:
 | 24K | 500  | 6 | 240 | 2 | 80  | 55  | 25 |
 | 32K | 500  | 5 | 160 | 1 | 40  | 22  | 18 |
 | 48K | 812  | 5 | 240 | 1 | 40  | 20  | 20 |
-| 64K | 1000 | 5 | 255 | - | -   | -   | -  |
-| 96K | 1000 | 5 | 255 | - | -   | -   | -  |
+| 64K | 1000 | 5 | 240×2 | 1 | 60  | 34  | ~5* |
+| 96K | 1000 | 5 | 240×3 | 1 | 60  | 51  | ~0* |
 
 **Notes:**
 - **Auto SF** = SF automatically adjusted to ensure minimum 10ms timing margin
 - **BW** = Bandwidth. Higher rates use wider bandwidth for faster transmission.
 - **TOA** = Time On Air (packet transmission duration at auto SF)
-- **Production** = frames/pkt × 40ms frame period. Streaming requires TOA ≤ production.
+- **Production** = frames/pkt × frame period. Streaming requires TOA ≤ production.
 - **Margin** = production - TOA. Minimum 10ms required for reliable streaming.
-- 64K and 96K require frame splitting across multiple packets (experimental).
+- 64K and 96K use **multi-packet mode**: each Opus frame spans 2-3 LoRa packets (see below).
+- *64K/96K margins are reduced because encode and TX are serialized (not pipelined). See "64K Mode Timing Analysis" below.
 
 ### General LoRa considerations
 
@@ -132,6 +135,8 @@ The LoRa bandwidth can be adjusted at runtime using serial commands. SF is autom
 - `B` - Step bandwidth up (reverse direction)
 - `f` - Step SF down (faster, shorter range)
 - `F` - Step SF up (slower, longer range)
+- `c` - Decrease Opus complexity (faster encode)
+- `C` - Increase Opus complexity (better quality)
 
 **Note:** Both TX and RX must use the same bandwidth and SF settings. When testing, step both boards together.
 
@@ -148,8 +153,8 @@ The firmware auto-adjusts SF to ensure streaming is feasible with sufficient tim
 | 24K | 500kHz  | SF6 | SF7@812, SF7@1000   |
 | 32K | 500kHz  | SF5 | SF6@812, SF6@1000   |
 | 48K | 812kHz  | SF5 | SF6@1000            |
-| 64K | 1000kHz | SF5 | (experimental)      |
-| 96K | 1000kHz | SF5 | (experimental)      |
+| 64K | 1000kHz | SF5 | multi-packet mode   |
+| 96K | 1000kHz | SF5 | multi-packet mode   |
 
 **Link Budget Trade-offs:**
 - Higher BW + higher SF = lower latency, similar range
@@ -187,6 +192,95 @@ Press 'T' via serial to enable test mode, which sends sequence numbers instead o
 - '?': Show stats (frames received, dropped, duplicates, gaps)
 
 The test script `test_radio_link.sh` automates testing across all Opus rates.
+
+### Multi-Packet Mode (64K/96K)
+
+For high-fidelity 64K and 96K modes, each Opus frame (480 or 720 bytes) exceeds the maximum LoRa payload size (255 bytes). These modes use **multi-packet operation** where each Opus frame is split across multiple LoRa packets.
+
+#### Configuration
+
+| Mode | Opus frame | Packets per frame | Packet size | Total TX time |
+|------|------------|-------------------|-------------|---------------|
+| 64K  | 480 bytes  | 2                 | 240 bytes   | 34 ms (SF5)   |
+| 96K  | 720 bytes  | 3                 | 240 bytes   | 51 ms (SF5)   |
+
+#### How Multi-Packet TX Works
+
+1. **Encoder produces 480-byte frame** (60ms of 48kHz audio)
+2. **First packet sent** (240 bytes) via streaming FIFO
+3. **Second packet sent immediately** after first completes
+4. TX done callback triggers next packet until full frame transmitted
+5. State machine transitions to buffer next Opus frame
+
+The TX state machine tracks `tx_bytes_sent` separately from FIFO writes to ensure all packets of a frame are transmitted before moving to the next frame.
+
+#### How Multi-Packet RX Works
+
+1. **FIFO threshold set to 64 bytes** for frequent draining (prevents overflow)
+2. **First packet arrives** (240 bytes accumulated in buffer)
+3. **Second packet arrives** (buffer now has 480 bytes)
+4. **Decode triggered** when `rx_fifo_read_idx >= bytes_per_frame`
+5. Buffer compacted via memmove, indices reset for next frame
+
+Key implementation details:
+- Hardware FIFO is only 256 bytes, so frequent draining via threshold IRQ is critical
+- Back-to-back packets at SF5 (17ms TOA) require fast FIFO servicing
+- Overflow recovery clears hardware FIFO and resets buffer indices
+
+#### Timing Constraints
+
+At SF5 with 1000kHz bandwidth:
+- Packet time-on-air: 17 ms
+- Two packets back-to-back: 34 ms total TX time
+- Opus frame production: 60 ms
+- **Margin: 26 ms** (sufficient for reliable streaming)
+
+The auto-SF adjustment ensures at least 10ms margin. If margin is insufficient at the current SF, the firmware automatically reduces SF to increase data rate.
+
+#### 64K Mode Timing Analysis
+
+The 64K mode operates with tight timing margins due to the serialized encode + TX cycle in multi-packet mode. Unlike single-packet modes where encoding can be pipelined with transmission, multi-packet mode must complete both packets before the next encode cycle.
+
+**Actual timing breakdown (measured via logic analyzer):**
+
+| Component | Time |
+|-----------|------|
+| Opus encode (silence) | ~19 ms |
+| Opus encode (audio content) | ~25-31 ms |
+| Packet 1 time-on-air | 17.4 ms |
+| Inter-packet SPI overhead | ~1 ms |
+| Packet 2 time-on-air | 17.4 ms |
+| **Total (silence)** | **~55 ms** |
+| **Total (audio)** | **~61-67 ms** |
+
+With a 60ms frame period, silence transmission has ~5ms margin, but audio content can exceed the frame period by 1-7ms. This causes `TX_SLOW` warnings but does not break streaming - the system recovers on subsequent silent frames.
+
+**Opus complexity tuning:**
+
+To reduce encode time, multi-packet modes automatically reduce Opus complexity from the default of 5:
+
+| Complexity | Encode time (audio) | Effect |
+|------------|---------------------|--------|
+| 5 (default)| ~35+ ms | Streaming fails |
+| 3-4 | ~30 ms | Frequent TX_SLOW |
+| 2 | ~25-31 ms | TX_SLOW during audio only |
+| 0-1 | ~19-25 ms | Rare TX_SLOW |
+
+The firmware defaults to complexity 2 for 64K/96K modes, providing a balance between audio quality and timing margin.
+
+**Runtime complexity adjustment:**
+
+Complexity can be adjusted via serial commands during operation:
+- `c` - Decrease complexity (faster encoding, lower quality)
+- `C` - Increase complexity (slower encoding, higher quality)
+
+**TX_SLOW monitoring:**
+
+During TX, the firmware monitors cycle time and reports:
+- Real-time warnings: `TX_SLOW: cycle=65ms > frame=60ms`
+- Summary at TX end: `TX end enc_max=31 cycle_max=72 overruns=8`
+
+The `enc_max` shows peak encode time, `cycle_max` shows peak total cycle time, and `overruns` counts frames exceeding the 60ms period.
 
 ### FHSS (Frequency Hopping)
 

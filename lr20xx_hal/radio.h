@@ -89,14 +89,15 @@ void print_streaming_timing_analysis(void);
 int adjust_sf_for_streaming(void);
 
 /* Streaming TX functions */
-int Send_lr20xx_streaming(uint8_t total_size, uint8_t initial_bytes);
-uint8_t Send_lr20xx_fifo_continue(void);
+int Send_lr20xx_streaming(uint16_t total_size, uint16_t initial_bytes);
+uint16_t Send_lr20xx_fifo_continue(void);
 
 /* Streaming TX state (defined in radio_lr20xx.c) */
-extern volatile uint8_t tx_fifo_idx;
-extern volatile uint8_t tx_total_size;
+extern volatile uint16_t tx_fifo_idx;
+extern volatile uint16_t tx_total_size;
+extern volatile uint16_t tx_bytes_sent;    /* bytes actually transmitted (updated after each TxDone) */
 extern volatile uint8_t streaming_tx_active;
-extern volatile uint8_t tx_buf_produced;  /* encoder updates this when new frame ready */
+extern volatile uint16_t tx_buf_produced;  /* encoder updates this when new frame ready */
 
 /* Streaming TX state machine */
 typedef enum {
@@ -113,7 +114,7 @@ extern volatile uint32_t stream_underflow_count;
 /* Streaming TX configuration */
 void calculate_streaming_config(void);
 uint8_t apply_streaming_sf(void);
-uint8_t get_streaming_initial_bytes(void);
+uint16_t get_streaming_initial_bytes(void);
 
 /* Streaming config structure (read-only access) */
 typedef struct {
@@ -121,6 +122,7 @@ typedef struct {
     uint8_t recommended_sf;
     uint8_t max_payload_bytes;
     uint8_t frames_per_packet;
+    uint8_t packets_per_frame;  /* Number of LoRa packets per Opus frame (1 for normal, 2+ for 64K/96K) */
     int32_t margin_ms;
     uint8_t streaming_feasible;
 } streaming_config_t;

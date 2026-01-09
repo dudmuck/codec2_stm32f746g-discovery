@@ -61,6 +61,9 @@ extern "C" {
 #define OPUS_WRAPPER_SAMPLES_PER_FRAME_16K  (OPUS_WRAPPER_SAMPLE_RATE_16K * OPUS_WRAPPER_FRAME_MS_DEFAULT / 1000)  /* 640 */
 #define OPUS_WRAPPER_SAMPLES_PER_FRAME_48K  (OPUS_WRAPPER_SAMPLE_RATE_48K * OPUS_WRAPPER_FRAME_MS_DEFAULT / 1000)  /* 1920 */
 
+/* Maximum samples per frame (for buffer allocation) - 60ms @ 48kHz */
+#define OPUS_WRAPPER_SAMPLES_PER_FRAME_MAX  (OPUS_WRAPPER_SAMPLE_RATE_48K * OPUS_WRAPPER_FRAME_MS_MAX / 1000)      /* 2880 */
+
 /* Maximum encoded frame size (for buffer allocation)
  * At 96kbps, 60ms frame: 96000 * 0.060 / 8 = 720 bytes */
 #define OPUS_WRAPPER_MAX_FRAME_BYTES    768
@@ -169,6 +172,15 @@ int opus_wrapper_get_frame_ms(struct OPUS_WRAPPER *ow);
  * @return      Complexity (0-10, higher = better quality, more CPU)
  */
 int opus_wrapper_get_complexity(struct OPUS_WRAPPER *ow);
+
+/*
+ * Set the encoder complexity setting
+ *
+ * @param ow          Wrapper state
+ * @param complexity  Complexity (0-10, lower = faster encoding, less CPU)
+ * @return            0 on success, negative on error
+ */
+int opus_wrapper_set_complexity(struct OPUS_WRAPPER *ow, int complexity);
 
 /*
  * Get the recommended sample rate for a mode (static, no instance needed)

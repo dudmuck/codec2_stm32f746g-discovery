@@ -40,7 +40,7 @@ struct OPUS_WRAPPER *ow;
 uint8_t frames_per_sec;
 unsigned nsamp;
 unsigned nsamp_x2;
-uint8_t _bytes_per_frame;
+uint16_t _bytes_per_frame;
 uint8_t frame_length_bytes;
 uint8_t lora_payload_length;
 uint8_t sf_at_500KHz;
@@ -572,6 +572,8 @@ int main(void)
     {
         int bitrate = opus_wrapper_get_bitrate(ow);
         int frame_ms = opus_wrapper_get_frame_ms(ow);
+        int mode = opus_wrapper_get_mode(ow);
+        printf("DEBUG: mode=%d bitrate=%d frame_ms=%d\r\n", mode, bitrate, frame_ms);
         /* bytes_per_frame = (bitrate * frame_duration_ms) / (8 * 1000)
          * For 40ms frame: bytes = bitrate * 40 / 8000 = bitrate / 200
          * For 60ms frame: bytes = bitrate * 60 / 8000 = bitrate / 133 */
@@ -588,19 +590,44 @@ int main(void)
     /* Calculate streaming configuration based on (possibly adjusted) SF */
     calculate_streaming_config();
 
+    /* Multi-packet modes (64K, 96K) need faster encoding because we can't
+     * pipeline encode with TX. Reduce complexity to 2 (from default 5).
+     * Testing shows: 0-1 same, 2 only slow during audio, 3+ causes defects. */
+    if (streaming_cfg.packets_per_frame > 1) {
+        opus_wrapper_set_complexity(ow, 2);
+        printf("Multi-packet mode: reduced Opus complexity to %d\r\n",
+               opus_wrapper_get_complexity(ow));
+    }
+
     /* Configure TX FIFO IRQ: alert when FIFO level drops below threshold (room for more data)
      * or on underflow. Threshold set to _bytes_per_frame so we get IRQ when there's room
      * for another Opus frame.
      * Configure RX FIFO IRQ: alert when FIFO level exceeds threshold (data available to read)
-     * or on overflow. Threshold set to _bytes_per_frame so we get IRQ when there's a full
-     * Opus frame available for early decoding. */
-    lr20xx_radio_fifo_cfg_irq(NULL,
-                              LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH | LR20XX_RADIO_FIFO_FLAG_OVERFLOW,  /* rx_fifo_irq_enable */
-                              LR20XX_RADIO_FIFO_FLAG_THRESHOLD_LOW | LR20XX_RADIO_FIFO_FLAG_UNDERFLOW,  /* tx_fifo_irq_enable */
-                              _bytes_per_frame,             /* rx_fifo_high_threshold */
-                              _bytes_per_frame,             /* tx_fifo_low_threshold */
-                              0,                            /* rx_fifo_low_threshold */
-                              0);                           /* tx_fifo_high_threshold */
+     * or on overflow.
+     * Note: LR2021 FIFO is only 256 bytes. For multi-packet mode (64K, 96K), we need to drain
+     * the FIFO frequently to avoid overflow since packets arrive back-to-back. Use 64 bytes
+     * as threshold to ensure we drain well before the 256-byte limit. */
+    {
+        uint16_t rx_threshold, tx_threshold;
+        if (streaming_cfg.packets_per_frame > 1) {
+            /* Multi-packet mode: drain RX FIFO frequently (every 64 bytes) to avoid overflow */
+            rx_threshold = 64;
+            tx_threshold = 64;
+        } else {
+            /* Normal mode: threshold at frame size for efficiency */
+            rx_threshold = _bytes_per_frame;
+            tx_threshold = _bytes_per_frame;
+            if (rx_threshold > 200) rx_threshold = 200;  /* Leave headroom below 256 */
+            if (tx_threshold > 200) tx_threshold = 200;
+        }
+        lr20xx_radio_fifo_cfg_irq(NULL,
+                                  LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH | LR20XX_RADIO_FIFO_FLAG_OVERFLOW,  /* rx_fifo_irq_enable */
+                                  LR20XX_RADIO_FIFO_FLAG_THRESHOLD_LOW | LR20XX_RADIO_FIFO_FLAG_UNDERFLOW,  /* tx_fifo_irq_enable */
+                                  rx_threshold,               /* rx_fifo_high_threshold */
+                                  tx_threshold,               /* tx_fifo_low_threshold */
+                                  0,                          /* rx_fifo_low_threshold */
+                                  0);                         /* tx_fifo_high_threshold */
+    }
 
     AudioLoopback_demo();
 

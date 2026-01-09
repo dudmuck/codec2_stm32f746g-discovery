@@ -121,7 +121,7 @@ extern uint8_t frames_per_sec;
 #endif /* __MAIN_H */
 
 extern uint8_t lora_payload_length;
-extern uint8_t _bytes_per_frame;
+extern uint16_t _bytes_per_frame;
 extern uint8_t frame_length_bytes;
 extern uint8_t sf_at_500KHz;
 

@@ -5,7 +5,7 @@
 #
 # Usage: ./test_radio_link.sh [duration_seconds] [rate]
 #   duration_seconds: test duration per rate (default: 10)
-#   rate: specific rate to test (6K,8K,12K,16K,24K,32K,48K)
+#   rate: specific rate to test (6K,8K,12K,16K,24K,32K,48K,64K)
 #         if omitted, tests all rates
 #
 
@@ -26,7 +26,9 @@ RATES[3]="16K"
 RATES[4]="24K"
 RATES[5]="32K"
 RATES[6]="48K"
-# Note: 64K (7) and 96K (8) exceed LoRa max payload size (255 bytes)
+RATES[7]="64K"
+# Note: 64K uses 60ms frames with 2 packets (240+240 bytes)
+# Note: 96K (8) uses 60ms frames with 3 packets - not yet tested
 
 # Reverse lookup: name -> index
 declare -A RATE_IDX
@@ -37,6 +39,7 @@ RATE_IDX["16K"]=3
 RATE_IDX["24K"]=4
 RATE_IDX["32K"]=5
 RATE_IDX["48K"]=6
+RATE_IDX["64K"]=7
 
 # Results tracking
 declare -A RESULTS
@@ -208,7 +211,7 @@ print_summary() {
     echo "Duration per rate: ${TEST_DURATION}s"
     echo ""
 
-    for rate_idx in 0 1 2 3 4 5 6; do
+    for rate_idx in 0 1 2 3 4 5 6 7; do
         local rate_name=${RATES[$rate_idx]}
         local result=${RESULTS[$rate_name]}
         # Only print if this rate was tested
@@ -242,7 +245,7 @@ echo "Test duration: ${TEST_DURATION}s per rate"
 if [ -n "$SINGLE_RATE" ]; then
     if [ -z "${RATE_IDX[$SINGLE_RATE]}" ]; then
         echo -e "${RED}Error: Invalid rate '$SINGLE_RATE'${NC}"
-        echo "Valid rates: 6K, 8K, 12K, 16K, 24K, 32K, 48K"
+        echo "Valid rates: 6K, 8K, 12K, 16K, 24K, 32K, 48K, 64K"
         exit 1
     fi
     echo "Testing rate: $SINGLE_RATE only"
@@ -261,7 +264,7 @@ if [ -n "$SINGLE_RATE" ]; then
     run_test ${RATE_IDX[$SINGLE_RATE]}
 else
     # Test all rates
-    for rate_idx in 0 1 2 3 4 5 6; do
+    for rate_idx in 0 1 2 3 4 5 6 7; do
         run_test $rate_idx
     done
 fi

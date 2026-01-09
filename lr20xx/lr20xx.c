@@ -22,6 +22,9 @@ void (*LR20xx_fifoRx)(lr20xx_radio_fifo_flag_t rx_fifo_flags);
 uint8_t LR20xx_tx_buf[LR20XX_BUF_SIZE];
 uint8_t LR20xx_rx_buf[LR20XX_BUF_SIZE];
 
+/* Deferred FIFO warning flag (to avoid slow printf in IRQ) */
+volatile uint16_t rx_fifo_residual_bytes;  /* >0 means warning needs to be printed */
+
 /*yyy void test_reset_pin()
 {
 	printf("testResetPin\r\n");
@@ -93,28 +96,26 @@ bool LR20xx_service()
                 uint16_t size;
                 ASSERT_LR20XX_RC( lr20xx_radio_common_get_rx_packet_length(NULL, &size) );
                 if (size <= LR20XX_BUF_SIZE) {
-                    /* Check if streaming RX already read some data */
                     extern volatile uint16_t rx_fifo_read_idx;
-                    if (rx_fifo_read_idx > 0) {
-                        /* Streaming RX active - only read remaining bytes not yet read */
-                        if (size > rx_fifo_read_idx) {
-                            uint16_t remaining = size - rx_fifo_read_idx;
-                            ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], remaining) );
-                            rx_fifo_read_idx = size;  /* Update index so streaming_rx_decode() sees all data */
-                        }
-                        /* Data already in buffer from streaming reads */
+
+                    if (LR20xx_fifoRx) {
+                        /* Streaming mode: delegate FIFO reads to the FIFO callback.
+                         * This ensures a single consistent code path for all FIFO reads,
+                         * preventing race conditions in multi-packet mode. */
+                        lr20xx_radio_fifo_flag_t rx_flags = LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH;
+                        LR20xx_fifoRx(rx_flags);  /* Read any remaining data */
                     } else {
-                        /* Normal RX - read entire packet */
-                        ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, LR20xx_rx_buf, size) );
-                        rx_fifo_read_idx = size;  /* Update index so streaming_rx_decode() sees all data */
-                    }
-                    /* Check if another packet started arriving while reading FIFO */
-                    {
-                        uint16_t fifo_level_after;
-                        if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level_after) == LR20XX_STATUS_OK) {
-                            if (fifo_level_after > 0) {
-                                printf("\e[33mWARN: RX FIFO %u bytes after RX_DONE read\e[0m\r\n", fifo_level_after);
+                        /* Non-streaming mode: read entire packet directly */
+                        uint16_t fifo_remaining;
+                        if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_remaining) == LR20XX_STATUS_OK) {
+                            if (fifo_remaining > 0 && (rx_fifo_read_idx + fifo_remaining) <= LR20XX_BUF_SIZE) {
+                                ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], fifo_remaining) );
+                                rx_fifo_read_idx += fifo_remaining;
                             }
+                        } else if (rx_fifo_read_idx == 0) {
+                            /* Fallback: no FIFO level available, read full packet to start */
+                            ASSERT_LR20XX_RC( lr20xx_radio_fifo_read_rx(NULL, LR20xx_rx_buf, size) );
+                            rx_fifo_read_idx = size;
                         }
                     }
                     if (LR20xx_rxDone) {
