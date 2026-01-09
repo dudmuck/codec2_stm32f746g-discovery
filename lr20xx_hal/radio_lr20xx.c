@@ -7,7 +7,11 @@
 #include "lr20xx_radio_common.h"
 #include "lr20xx_radio_lora.h"
 #include "lr20xx_radio_fifo.h"
+#include "lr20xx_hal.h"  /* for lr20xx_stat_t */
 #include "main.h" // for delay_ticks()
+
+/* Cached status from HAL layer - updated on every SPI transaction */
+extern lr20xx_stat_t stat;
 
 /* Uncomment to enable TCXO instead of crystal oscillator */
 // #define LR20XX_USE_TCXO
@@ -434,14 +438,19 @@ int Send_lr20xx(uint8_t size/*, timestamp_t maxListenTime, timestamp_t channelFr
 int Send_lr20xx_streaming(uint16_t total_size, uint16_t initial_bytes)
 {
 	extern uint8_t lora_payload_length;
+	static uint8_t last_pkt_params_len = 0;  /* Cache to avoid redundant SPI */
 
 	/* Packet length is always lora_payload_length (the LoRa packet size).
 	 * For multi-packet mode, total_size > lora_payload_length and we send
 	 * multiple packets by restarting TX after each TxDone. */
 	lora_pkt_params.pld_len_in_bytes = lora_payload_length;
 
-	if (lr20xx_radio_lora_set_packet_params( NULL, &lora_pkt_params ) != LR20XX_STATUS_OK)
-		return -1;
+	/* Only send packet params if payload length changed (saves ~30µs per frame) */
+	if (lora_payload_length != last_pkt_params_len) {
+		if (lr20xx_radio_lora_set_packet_params( NULL, &lora_pkt_params ) != LR20XX_STATUS_OK)
+			return -1;
+		last_pkt_params_len = lora_payload_length;
+	}
 	lr20xx_radio_fifo_clear_tx( NULL );
 
 	/* Write initial bytes to FIFO (up to one packet worth) */
@@ -529,20 +538,15 @@ static void LoRaPacketConfig_lr20xx(unsigned preambleLen, bool fixLen, bool crcO
 
 static void printOpMode_lr20xx()
 {
-	lr20xx_system_stat1_t stat1;
-	lr20xx_system_stat2_t stat2;
-	lr20xx_system_irq_mask_t irq_status;
-
-	if (lr20xx_system_get_status(NULL, &stat1, &stat2, &irq_status) == LR20XX_STATUS_OK) {
-		switch (stat2.chip_mode) {
-			case LR20XX_SYSTEM_CHIP_MODE_SLEEP: printf("SLEEP "); break;
-			case LR20XX_SYSTEM_CHIP_MODE_STBY_RC: printf("STBY_RC "); break;
-			case LR20XX_SYSTEM_CHIP_MODE_STBY_XOSC: printf("STBY_XOSC "); break;
-			case LR20XX_SYSTEM_CHIP_MODE_FS: printf("FS "); break;
-			case LR20XX_SYSTEM_CHIP_MODE_RX: printf("RX "); break;
-			case LR20XX_SYSTEM_CHIP_MODE_TX: printf("TX "); break;
-			default: printf("?%d? ", stat2.chip_mode); break;
-		}
+	/* Use cached status from HAL layer instead of SPI call */
+	switch (stat.bits.chip_mode) {
+		case LR20XX_SYSTEM_CHIP_MODE_SLEEP: printf("SLEEP "); break;
+		case LR20XX_SYSTEM_CHIP_MODE_STBY_RC: printf("STBY_RC "); break;
+		case LR20XX_SYSTEM_CHIP_MODE_STBY_XOSC: printf("STBY_XOSC "); break;
+		case LR20XX_SYSTEM_CHIP_MODE_FS: printf("FS "); break;
+		case LR20XX_SYSTEM_CHIP_MODE_RX: printf("RX "); break;
+		case LR20XX_SYSTEM_CHIP_MODE_TX: printf("TX "); break;
+		default: printf("?%d? ", stat.bits.chip_mode); break;
 	}
 }
 
@@ -627,14 +631,10 @@ uint32_t get_freq_hz_lr20xx(void)
 
 uint8_t get_chip_mode_lr20xx(void)
 {
-	lr20xx_system_stat1_t stat1;
-	lr20xx_system_stat2_t stat2;
-	lr20xx_system_irq_mask_t irq_status;
-
-	if (lr20xx_system_get_status(NULL, &stat1, &stat2, &irq_status) == LR20XX_STATUS_OK) {
-		return stat2.chip_mode;
-	}
-	return 0xff;  /* error */
+	/* Use cached status from HAL layer instead of SPI call.
+	 * The stat is updated after every SPI command, so it reflects
+	 * the chip mode after the most recent radio operation. */
+	return stat.bits.chip_mode;
 }
 
 static bool is_sf_at_slowest(void)
