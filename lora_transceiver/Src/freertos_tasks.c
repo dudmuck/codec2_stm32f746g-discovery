@@ -28,13 +28,15 @@ extern volatile uint16_t tx_buf_idx;
 extern volatile uint8_t txing;
 extern uint16_t _bytes_per_frame;
 extern volatile uint8_t user_button_pressed;
-extern uint8_t audio_test_mode;
 extern unsigned nsamp;
 extern unsigned navgs_;
 extern uint16_t encoder_sine_step;
+#ifdef ENABLE_TEST_AUDIO
+extern uint8_t audio_test_mode;
 extern const int16_t *test_audio_ptr;
 extern uint32_t test_audio_len;
 extern uint32_t audio_test_idx;
+#endif
 extern bool micRightEn;
 extern bool micLeftEn;
 
@@ -433,6 +435,7 @@ static void vEncoderTask(void *pvParameters)
         short *audio_ptr;
         static short mono_buf[2880];  /* max for 60ms @ 48kHz */
 
+#ifdef ENABLE_TEST_AUDIO
         if (audio_test_mode && test_audio_ptr != NULL) {
             /* Use recorded voice sample for audio test mode */
             for (unsigned x = 0; x < nsamp; x++) {
@@ -442,7 +445,9 @@ static void vEncoderTask(void *pvParameters)
                     audio_test_idx = 0;  /* loop */
             }
             audio_ptr = mono_buf;
-        } else {
+        } else
+#endif
+        {
             /* Convert stereo interleaved to mono with decimation */
             short *in = half_ready ? (short*)audio_buffer_in : (short*)audio_buffer_in_B;
             for (unsigned x = 0; x < nsamp; x++) {

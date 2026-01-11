@@ -9,9 +9,11 @@
 #include "string.h"
 #include "radio.h"
 #include "opus_wrapper.h"
+#ifdef ENABLE_TEST_AUDIO
 #include "test_audio_8000.h"
 #include "test_audio_16000.h"
 #include "test_audio_48000.h"
+#endif
 #ifdef ENABLE_LR20XX
 #include "lr20xx.h"
 #include "lr20xx_radio_fifo.h"
@@ -111,10 +113,12 @@ volatile uint8_t uart_tx_active;   // flag for UART-controlled TX
 
 /* Test mode variables */
 uint8_t test_mode;              // flag for sequence number test mode
+#ifdef ENABLE_TEST_AUDIO
 uint8_t audio_test_mode;        // flag for test audio TX mode
 uint32_t audio_test_idx;        // index into test audio array (shared with freertos_tasks.c)
 const int16_t *test_audio_ptr;  // pointer to test audio data
 uint32_t test_audio_len;        // length of test audio data
+#endif
 uint8_t sine_playback_mode;     // flag for direct sine wave playback on speaker
 static uint16_t sine_play_idx;  // sine table index for playback
 static uint32_t audioRate_;     // actual I2S sample rate for sine step calculation
@@ -458,6 +462,7 @@ void svc_uart()
         reset_fifo_rx_debug();
 #endif
         printf("Test mode %s\r\n", test_mode ? "ON" : "OFF");
+#ifdef ENABLE_TEST_AUDIO
     } else if (rxchar == 'A') {
         audio_test_mode ^= 1;
         audio_test_idx = 0;
@@ -483,6 +488,7 @@ void svc_uart()
         } else {
             printf("Audio test mode OFF\r\n");
         }
+#endif
     } else if (rxchar == 'S') {
         /* Toggle local sine wave playback on speaker for audio reference */
         sine_playback_mode ^= 1;
@@ -664,6 +670,7 @@ void decimated_encode(const short *in, uint8_t *out)
     unsigned i, x;
     int sum;
 
+#ifdef ENABLE_TEST_AUDIO
     /* Audio test mode: use recorded voice sample instead of microphone */
     if (audio_test_mode && test_audio_ptr != NULL) {
         for (x = 0; x < nsamp; x++) {
@@ -672,7 +679,9 @@ void decimated_encode(const short *in, uint8_t *out)
             if (audio_test_idx >= test_audio_len)
                 audio_test_idx = 0;  /* loop */
         }
-    } else {
+    } else
+#endif
+    {
         for (x = 0; x < nsamp; x++) {
             sum = 0;
             for (i = 0; i < navgs_; i++) {
