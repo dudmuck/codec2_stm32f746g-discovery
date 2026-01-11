@@ -1,14 +1,21 @@
 #include <stdio.h>
+#include <string.h>
 #include "radio.h"
 #include "stm32f7xx_hal.h"
 #include "lr20xx.h"
 #include "pinDefs_lr20xx.h"
 #include "lr20xx_system.h"
 #include "lr20xx_radio_common.h"
-#include "lr20xx_radio_lora.h"
 #include "lr20xx_radio_fifo.h"
 #include "lr20xx_hal.h"  /* for lr20xx_stat_t */
 #include "main.h" // for delay_ticks()
+
+/* Modem-specific includes */
+#ifdef MODEM_FSK
+#include "lr20xx_radio_fsk.h"
+#else
+#include "lr20xx_radio_lora.h"
+#endif
 
 /* Cached status from HAL layer - updated on every SPI transaction */
 extern lr20xx_stat_t stat;
@@ -20,16 +27,35 @@ extern lr20xx_stat_t stat;
 #define LR20XX_TCXO_STARTUP_TICKS   300  /* 300 x 30.52µs = ~9.2ms */
 #endif
 
+static const RadioEvents_t* RadioEvents;
+
+#ifdef MODEM_FSK
+/* FSK configuration */
+#define FSK_SYNCWORD_LENGTH_BITS    32
+#define FSK_PREAMBLE_LENGTH_BITS    40
+#define FSK_DEFAULT_BITRATE         50000   /* 50 kbps default */
+#define FSK_DEFAULT_FDEV            25000   /* 25 kHz deviation */
+
+static const uint8_t fsk_sync_word[LR20XX_RADIO_FSK_SYNCWORD_LENGTH] = {
+    0x00, 0x00, 0x00, 0x00, 0xC1, 0x94, 0xC1, 0x94  /* 32-bit sync word in LSBs */
+};
+
+/* Static packet params - set by FSKPacketConfig_lr20xx(), used by Send_lr20xx() */
+static lr20xx_radio_fsk_pkt_params_t fsk_pkt_params;
+
+/* Static modulation params - set by FSKModemConfig_lr20xx() */
+static lr20xx_radio_fsk_mod_params_t fsk_mod_params;
+
+#else /* MODEM_LORA */
 /* LoRa sync word: 0x12 = Private Network, 0x34 = Public Network (LoRaWAN) */
 #define LR20XX_LORA_SYNCWORD        0x12
-
-static const RadioEvents_t* RadioEvents;
 
 /* Static packet params - set by LoRaPacketConfig_lr20xx(), used by Send_lr20xx() */
 static lr20xx_radio_lora_pkt_params_t lora_pkt_params;
 
 /* Static modulation params - set by LoRaModemConfig_lr20xx(), used by is_bw_at_*(), is_sf_at_*() */
 static lr20xx_radio_lora_mod_params_t lora_mod_params;
+#endif /* MODEM_FSK */
 
 /* Streaming TX state - allows sending frames to FIFO incrementally */
 volatile uint16_t tx_fifo_idx;        /* how much of tx_buf has been sent to FIFO */
@@ -37,6 +63,9 @@ volatile uint16_t tx_total_size;      /* total packet size to transmit */
 volatile uint16_t tx_bytes_sent;      /* bytes actually transmitted (updated after each TxDone) */
 volatile uint8_t streaming_tx_active; /* flag: streaming TX in progress */
 volatile uint16_t tx_buf_produced;    /* how much encoder has written to tx_buf */
+
+/* External: tx_buf write index from lora_xcvr.c */
+extern volatile uint16_t tx_buf_idx;
 
 /* Streaming TX state machine */
 volatile stream_state_t stream_state = STREAM_IDLE;
@@ -48,26 +77,10 @@ void Radio_txDoneBottom()
     streaming_tx_active = 0;
 
     if (stream_state == STREAM_BUFFERING_NEXT) {
-        /* We were buffering next packet while this TX was in progress.
-         * Check if we have enough frames to start next TX immediately. */
-        uint16_t initial_bytes = get_streaming_initial_bytes();
-        if (tx_buf_produced >= initial_bytes) {
-            /* Enough frames ready - start TX immediately (no gap!) */
-            extern uint8_t lora_payload_length;
-            extern uint16_t _bytes_per_frame;
-            /* For multi-packet mode, send full Opus frame (multiple LoRa packets) */
-            uint16_t tx_size = (streaming_cfg.packets_per_frame > 1) ?
-                               _bytes_per_frame : lora_payload_length;
-            if (Send_lr20xx_streaming(tx_size, initial_bytes) == 0) {
-                stream_state = STREAM_TX_ACTIVE;
-                tx_continuing = 1;  /* Don't notify app - we're still transmitting */
-            } else {
-                stream_state = STREAM_IDLE;
-            }
-        } else {
-            /* Not enough frames yet - continue encoding */
-            stream_state = STREAM_ENCODING;
-        }
+        /* Let lora_xcvr.c handle all buffer management (memmove) and TX restart.
+         * Doing memmove here would race with main task's buffer writes.
+         * The slight latency from waiting for main loop is acceptable. */
+        stream_state = STREAM_IDLE;
     } else if (stream_state == STREAM_WAIT_TX) {
         /* Update bytes actually transmitted (one LoRa packet just completed) */
         extern uint8_t lora_payload_length;
@@ -122,8 +135,14 @@ void Radio_chipModeChange()
     /* indicate radio mode with LEDs, if desired */
 }
 
+/* External flag for fast interrupt response */
+extern volatile uint8_t dio8_irq_pending;
+
 void Radio_dio8_top_half()
 {
+    /* Set flag immediately for fast polling response */
+    dio8_irq_pending = 1;
+
     if (RadioEvents->DioPin_top_half) {
         RadioEvents->DioPin_top_half();
 	}
@@ -156,7 +175,7 @@ static void Init_lr20xx(const RadioEvents_t* e)
 	// pin initializtion require prior to using reset pin
     init_lr20xx();
 
-	printf("Init_lr20xx\r\n");
+	printf("Init_lr20xx built %s %s\r\n", __DATE__, __TIME__);
 	do {
 		printf("radio reset\r\n");
 		lr20xx_system_reset(NULL);
@@ -213,6 +232,37 @@ static void Init_lr20xx(const RadioEvents_t* e)
 	/* Configure low frequency clock source (internal RC 32kHz) */
 	ASSERT_LR20XX_RC( lr20xx_system_cfg_lfclk(NULL, LR20XX_SYSTEM_LFCLK_RC) );
 
+#ifdef MODEM_FSK
+	ASSERT_LR20XX_RC( lr20xx_radio_common_set_pkt_type(NULL, LR20XX_RADIO_COMMON_PKT_TYPE_FSK) );
+
+	/* Set FSK sync word */
+	ASSERT_LR20XX_RC( lr20xx_radio_fsk_set_syncword(NULL, fsk_sync_word, FSK_SYNCWORD_LENGTH_BITS,
+	                                                 LR20XX_RADIO_FSK_SYNCWORD_MSBF) );
+
+	/* Initialize default FSK packet params */
+	fsk_pkt_params.pbl_length_in_bit = FSK_PREAMBLE_LENGTH_BITS;
+	fsk_pkt_params.preamble_detector = LR20XX_RADIO_FSK_PREAMBLE_DETECTOR_16_BITS;
+	fsk_pkt_params.long_preamble_enabled = false;
+	fsk_pkt_params.address_filtering = LR20XX_RADIO_FSK_ADDRESS_FILTERING_DISABLED;
+	fsk_pkt_params.header_mode = LR20XX_RADIO_FSK_HEADER_8BITS;  /* Variable length */
+	fsk_pkt_params.payload_length_unit = LR20XX_RADIO_FSK_PAYLOAD_LENGTH_IN_BYTE;
+	fsk_pkt_params.payload_length = 255;  /* Max length for variable packets */
+	fsk_pkt_params.crc = LR20XX_RADIO_FSK_CRC_2_BYTES;
+	fsk_pkt_params.whitening = LR20XX_RADIO_FSK_WHITENING_ON;
+
+	/* Set default FSK modulation params */
+	fsk_mod_params.br = FSK_DEFAULT_BITRATE;
+	fsk_mod_params.pulse_shape = LR20XX_RADIO_FSK_PULSE_SHAPE_GAUSSIAN_BT_1_0;
+	fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_119_000_HZ;  /* ~117 kHz */
+	fsk_mod_params.fdev_in_hz = FSK_DEFAULT_FDEV;
+
+	/* Configure FSK whitening (LoRaWAN compatible) */
+	ASSERT_LR20XX_RC( lr20xx_radio_fsk_set_whitening_params(NULL,
+	                   LR20XX_RADIO_FSK_WHITENING_COMPATIBILITY_SX126X_LR11XX, 0x01FF) );
+
+	/* Configure FSK CRC (CCITT) */
+	ASSERT_LR20XX_RC( lr20xx_radio_fsk_set_crc_params(NULL, 0x1021, 0xFFFF) );
+#else /* MODEM_LORA */
 	ASSERT_LR20XX_RC( lr20xx_radio_common_set_pkt_type(NULL, LR20XX_RADIO_COMMON_PKT_TYPE_LORA) );
 
 	/* Set LoRa sync word */
@@ -224,6 +274,7 @@ static void Init_lr20xx(const RadioEvents_t* e)
 	lora_pkt_params.pld_len_in_bytes = 0;
 	lora_pkt_params.crc = LR20XX_RADIO_LORA_CRC_ENABLED;
 	lora_pkt_params.iq = LR20XX_RADIO_LORA_IQ_STANDARD;
+#endif /* MODEM_FSK */
 
 	/* Configure PA for LF path (sub-GHz) */
 	{
@@ -304,6 +355,57 @@ static void Standby_lr20xx()
 	LR20xx_setStandby(LR20XX_SYSTEM_STANDBY_MODE_RC);
 }
 
+#ifdef MODEM_FSK
+/* FSK modem configuration
+ * For FSK, bwKHz is interpreted as bitrate in kbps, sf is ignored, cr is ignored */
+static void FSKModemConfig_lr20xx(unsigned bitrate_kbps, uint8_t unused1, uint8_t unused2)
+{
+	(void)unused1;
+	(void)unused2;
+
+	fsk_mod_params.br = bitrate_kbps * 1000;  /* Convert kbps to bps */
+	/* Frequency deviation is typically bitrate/2 for optimal modulation index */
+	fsk_mod_params.fdev_in_hz = (bitrate_kbps * 1000) / 2;
+
+	/* Set RX bandwidth: select smallest BW >= (2*fdev + bitrate)
+	 * Semtech rule: (2 * FDEV + BITRATE) < BW */
+	uint32_t min_bw = 2 * fsk_mod_params.fdev_in_hz + fsk_mod_params.br;
+	uint32_t selected_bw_khz;
+	if (min_bw <= 14000) {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_14_000_HZ;
+		selected_bw_khz = 14;
+	} else if (min_bw <= 29000) {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_29_000_HZ;
+		selected_bw_khz = 29;
+	} else if (min_bw <= 59000) {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_59_000_HZ;
+		selected_bw_khz = 59;
+	} else if (min_bw <= 111000) {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_111_000_HZ;
+		selected_bw_khz = 111;
+	} else if (min_bw <= 178000) {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_178_000_HZ;
+		selected_bw_khz = 178;
+	} else if (min_bw <= 238000) {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_238_000_HZ;
+		selected_bw_khz = 238;
+	} else if (min_bw <= 370000) {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_370_000_HZ;
+		selected_bw_khz = 370;
+	} else {
+		fsk_mod_params.bw = LR20XX_RADIO_FSK_COMMON_RX_BW_476_000_HZ;
+		selected_bw_khz = 476;
+	}
+
+	printf("FSK config: bitrate=%lu kbps, fdev=%lu kHz (beta=1.0), RX_BW=%lu kHz (min=%lu)\r\n",
+	       fsk_mod_params.br / 1000,
+	       fsk_mod_params.fdev_in_hz / 1000,
+	       selected_bw_khz,
+	       min_bw / 1000);
+
+	ASSERT_LR20XX_RC( lr20xx_radio_fsk_set_modulation_params(NULL, &fsk_mod_params) );
+}
+#else /* MODEM_LORA */
 // from start_radio() at radio.c:
 // 	* bwKhz is LORA_BW_KHZ
 // 	* sf is sf_at_500KHz
@@ -352,6 +454,7 @@ static void LoRaModemConfig_lr20xx(unsigned bwKHz, uint8_t sf, uint8_t cr)
 
 	ASSERT_LR20XX_RC( lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params) );
 }
+#endif /* MODEM_FSK */
 
 /* Calibration delta threshold in Hz (50 MHz) */
 #define LR20XX_CALIBRATION_DELTA_HZ    50000000
@@ -416,11 +519,19 @@ static void set_tx_dbm_lr20xx(int8_t dbm)
 
 int Send_lr20xx(uint8_t size/*, timestamp_t maxListenTime, timestamp_t channelFreeTime, int rssiThresh*/)
 {
+#ifdef MODEM_FSK
+	/* Update payload length in stored packet params */
+	fsk_pkt_params.payload_length = size;
+
+	if (lr20xx_radio_fsk_set_packet_params( NULL, &fsk_pkt_params ) != LR20XX_STATUS_OK)
+		return -1;
+#else
 	/* Update payload length in stored packet params */
 	lora_pkt_params.pld_len_in_bytes = size;
 
 	if (lr20xx_radio_lora_set_packet_params( NULL, &lora_pkt_params ) != LR20XX_STATUS_OK)
 		return -1;
+#endif
 	lr20xx_radio_fifo_clear_tx( NULL );
 	if (lr20xx_radio_fifo_write_tx( NULL, LR20xx_tx_buf, size) != LR20XX_STATUS_OK)
 		return -1;
@@ -433,13 +544,26 @@ int Send_lr20xx(uint8_t size/*, timestamp_t maxListenTime, timestamp_t channelFr
 }
 
 /* Streaming TX: start transmitting with initial_bytes, remaining sent via FIFO interrupt.
- * For multi-packet mode, total_size may span multiple LoRa packets, but each packet uses
+ * For multi-packet mode, total_size may span multiple packets, but each packet uses
  * lora_payload_length as configured. */
 int Send_lr20xx_streaming(uint16_t total_size, uint16_t initial_bytes)
 {
 	extern uint8_t lora_payload_length;
 	static uint8_t last_pkt_params_len = 0;  /* Cache to avoid redundant SPI */
 
+#ifdef MODEM_FSK
+	/* Packet length is always lora_payload_length (the packet size).
+	 * For multi-packet mode, total_size > lora_payload_length and we send
+	 * multiple packets by restarting TX after each TxDone. */
+	fsk_pkt_params.payload_length = lora_payload_length;
+
+	/* Only send packet params if payload length changed (saves SPI overhead) */
+	if (lora_payload_length != last_pkt_params_len) {
+		if (lr20xx_radio_fsk_set_packet_params( NULL, &fsk_pkt_params ) != LR20XX_STATUS_OK)
+			return -1;
+		last_pkt_params_len = lora_payload_length;
+	}
+#else
 	/* Packet length is always lora_payload_length (the LoRa packet size).
 	 * For multi-packet mode, total_size > lora_payload_length and we send
 	 * multiple packets by restarting TX after each TxDone. */
@@ -451,6 +575,7 @@ int Send_lr20xx_streaming(uint16_t total_size, uint16_t initial_bytes)
 			return -1;
 		last_pkt_params_len = lora_payload_length;
 	}
+#endif
 	lr20xx_radio_fifo_clear_tx( NULL );
 
 	/* Write initial bytes to FIFO (up to one packet worth) */
@@ -513,6 +638,16 @@ uint16_t Send_lr20xx_fifo_continue(void)
 	if (to_send == 0)
 		return 0;
 
+	/* Debug: check byte 288 when it's part of this FIFO write (64K multi-packet mode) */
+	if (tx_fifo_idx <= 288 && (tx_fifo_idx + to_send) > 288) {
+		static uint8_t tx288_fifo_debug_cnt = 0;
+		if (tx288_fifo_debug_cnt < 5) {
+			printf("TX FIFO byte[288]=%02x (write %u-%u)\r\n",
+			       LR20xx_tx_buf[288], tx_fifo_idx, tx_fifo_idx + to_send - 1);
+			tx288_fifo_debug_cnt++;
+		}
+	}
+
 	if (lr20xx_radio_fifo_write_tx(NULL, &LR20xx_tx_buf[tx_fifo_idx], to_send) != LR20XX_STATUS_OK)
 		return 0;
 
@@ -525,6 +660,25 @@ static bool service_lr20xx()
     return LR20xx_service();
 }
 
+#ifdef MODEM_FSK
+/* FSK packet configuration
+ * Parameters map from LoRa conventions:
+ * - preambleLen: preamble length in bits (FSK uses bits, not symbols)
+ * - fixLen: true = fixed length, false = variable length with header
+ * - crcOn: true = CRC enabled
+ * - invIQ: ignored for FSK (no IQ inversion) */
+static void FSKPacketConfig_lr20xx(unsigned preambleLen, bool fixLen, bool crcOn, bool invIQ)
+{
+	(void)invIQ;  /* FSK doesn't have IQ inversion */
+
+	fsk_pkt_params.pbl_length_in_bit = preambleLen;
+	fsk_pkt_params.header_mode = fixLen ? LR20XX_RADIO_FSK_HEADER_IMPLICIT : LR20XX_RADIO_FSK_HEADER_8BITS;
+	fsk_pkt_params.crc = crcOn ? LR20XX_RADIO_FSK_CRC_2_BYTES : LR20XX_RADIO_FSK_CRC_OFF;
+	/* payload_length will be set by Send_lr20xx() */
+
+	ASSERT_LR20XX_RC( lr20xx_radio_fsk_set_packet_params(NULL, &fsk_pkt_params) );
+}
+#else
 static void LoRaPacketConfig_lr20xx(unsigned preambleLen, bool fixLen, bool crcOn, bool invIQ)
 {
 	lora_pkt_params.preamble_len_in_symb = preambleLen;
@@ -535,6 +689,7 @@ static void LoRaPacketConfig_lr20xx(unsigned preambleLen, bool fixLen, bool crcO
 
 	ASSERT_LR20XX_RC( lr20xx_radio_lora_set_packet_params(NULL, &lora_pkt_params) );
 }
+#endif
 
 static void printOpMode_lr20xx()
 {
@@ -550,6 +705,59 @@ static void printOpMode_lr20xx()
 	}
 }
 
+#ifdef MODEM_FSK
+/* FSK: bitrate-based controls - BW/SF concepts don't apply */
+#define FSK_MIN_BITRATE_KBPS    1
+#define FSK_MAX_BITRATE_KBPS    500
+
+static bool is_bw_at_lowest(void)
+{
+	/* For FSK, "lowest BW" maps to lowest bitrate */
+	return (fsk_mod_params.br / 1000) <= FSK_MIN_BITRATE_KBPS;
+}
+
+static bool is_bw_at_highest(void)
+{
+	/* For FSK, "highest BW" maps to highest bitrate */
+	return (fsk_mod_params.br / 1000) >= FSK_MAX_BITRATE_KBPS;
+}
+
+void step_bw_lr20xx(bool up)
+{
+	/* For FSK, adjust bitrate instead of bandwidth */
+	uint32_t br_kbps = fsk_mod_params.br / 1000;
+
+	if (up) {
+		if (br_kbps < 10) br_kbps += 1;
+		else if (br_kbps < 50) br_kbps += 5;
+		else if (br_kbps < 100) br_kbps += 10;
+		else br_kbps += 50;
+		if (br_kbps > FSK_MAX_BITRATE_KBPS) br_kbps = FSK_MAX_BITRATE_KBPS;
+	} else {
+		if (br_kbps <= 10) br_kbps -= 1;
+		else if (br_kbps <= 50) br_kbps -= 5;
+		else if (br_kbps <= 100) br_kbps -= 10;
+		else br_kbps -= 50;
+		if (br_kbps < FSK_MIN_BITRATE_KBPS) br_kbps = FSK_MIN_BITRATE_KBPS;
+	}
+
+	/* Reconfigure FSK with new bitrate */
+	FSKModemConfig_lr20xx(br_kbps, 0, 0);
+}
+
+uint16_t get_bw_khz_lr20xx(void)
+{
+	/* For FSK, return bitrate in kbps as a rough "bandwidth" indicator */
+	return fsk_mod_params.br / 1000;
+}
+
+uint8_t get_sf_lr20xx(void)
+{
+	/* FSK doesn't have SF - return 0 to indicate FSK mode */
+	return 0;
+}
+
+#else /* MODEM_LORA */
 /* Bandwidth values in order from lowest to highest, with kHz values */
 static const struct {
 	lr20xx_radio_lora_bw_t bw;
@@ -623,6 +831,7 @@ uint8_t get_sf_lr20xx(void)
 {
 	return lora_mod_params.sf;
 }
+#endif /* MODEM_FSK */
 
 uint32_t get_freq_hz_lr20xx(void)
 {
@@ -637,6 +846,26 @@ uint8_t get_chip_mode_lr20xx(void)
 	return stat.bits.chip_mode;
 }
 
+#ifdef MODEM_FSK
+/* FSK doesn't have SF concept - these are stubs */
+static bool is_sf_at_slowest(void)
+{
+	/* For FSK, "slowest" is already handled by is_bw_at_lowest (bitrate) */
+	return is_bw_at_lowest();
+}
+
+static bool is_sf_at_fastest(void)
+{
+	/* For FSK, "fastest" is already handled by is_bw_at_highest (bitrate) */
+	return is_bw_at_highest();
+}
+
+void step_sf_lr20xx(bool up)
+{
+	/* For FSK, SF stepping is same as BW stepping (bitrate) */
+	step_bw_lr20xx(up);
+}
+#else /* MODEM_LORA */
 static bool is_sf_at_slowest(void)
 {
 	return lora_mod_params.sf == LR20XX_RADIO_LORA_SF12;
@@ -662,12 +891,70 @@ void step_sf_lr20xx(bool up)
 	lora_mod_params.ppm = lr20xx_radio_lora_get_recommended_ppm_offset(lora_mod_params.sf, lora_mod_params.bw);
 	ASSERT_LR20XX_RC( lr20xx_radio_lora_set_modulation_params(NULL, &lora_mod_params) );
 }
+#endif /* MODEM_FSK */
 
 static void PostConfigReadBack()
 {
 	/* do nothing here, or save initial values */
 }
 
+#ifdef MODEM_FSK
+/* FSK timing analysis using precise TOA calculation */
+void print_streaming_timing_analysis(void)
+{
+    extern uint16_t _bytes_per_frame;
+    extern uint8_t lora_payload_length;
+    extern uint8_t frames_per_sec;
+
+    uint8_t opus_frame_period_ms = 1000 / frames_per_sec;
+    uint32_t bitrate_bps = fsk_mod_params.br;
+    uint32_t fdev_hz = fsk_mod_params.fdev_in_hz;
+
+    /* Use driver function for precise TOA calculation */
+    lr20xx_radio_fsk_pkt_params_t pkt = fsk_pkt_params;
+    pkt.payload_length = lora_payload_length;
+    uint32_t pkt_toa_ms = lr20xx_radio_fsk_get_time_on_air_in_ms(&pkt, &fsk_mod_params,
+                                                                  FSK_SYNCWORD_LENGTH_BITS);
+
+    /* Check for multi-packet mode */
+    uint8_t multi_packet_mode = (_bytes_per_frame > lora_payload_length);
+    uint8_t frames_per_packet = multi_packet_mode ? 0 : lora_payload_length / _bytes_per_frame;
+    uint8_t packets_per_frame = multi_packet_mode ?
+        ((_bytes_per_frame + lora_payload_length - 1) / lora_payload_length) : 1;
+
+    /* Calculate production time and margin */
+    uint32_t opus_production_ms = multi_packet_mode ?
+        opus_frame_period_ms :
+        (frames_per_packet * opus_frame_period_ms);
+    uint32_t total_tx_ms = packets_per_frame * pkt_toa_ms;
+    int32_t margin_ms = (int32_t)opus_production_ms - (int32_t)total_tx_ms;
+
+    printf("\r\n========== FSK Streaming Timing Analysis ==========\r\n");
+    printf("FSK bitrate: %lu kbps, fdev: %lu kHz (beta=1.0)\r\n",
+           bitrate_bps / 1000, fdev_hz / 1000);
+    printf("Opus: %u bytes/frame @ %u fps (%u ms period)\r\n",
+           _bytes_per_frame, frames_per_sec, opus_frame_period_ms);
+    printf("Packet: %u bytes payload\r\n", lora_payload_length);
+    printf("Packet TOA: %lu ms (precise)\r\n", pkt_toa_ms);
+
+    if (multi_packet_mode) {
+        printf("Mode: MULTI-PACKET (%u packets per Opus frame)\r\n", packets_per_frame);
+        printf("Total TX time: %lu ms, margin: %ld ms\r\n", total_tx_ms, margin_ms);
+    } else {
+        printf("Mode: %u Opus frames per packet\r\n", frames_per_packet);
+        printf("Production time: %lu ms, TX time: %lu ms, margin: %ld ms\r\n",
+               opus_production_ms, total_tx_ms, margin_ms);
+    }
+
+    if (margin_ms < 0) {
+        printf("WARNING: Negative margin! TX slower than Opus production.\r\n");
+        printf("  -> Increase FSK bitrate or reduce Opus bitrate\r\n");
+    } else if (margin_ms < 5) {
+        printf("Note: Tight margin, may need tuning for reliability\r\n");
+    }
+    printf("===================================================\r\n\r\n");
+}
+#else /* MODEM_LORA */
 void print_streaming_timing_analysis(void)
 {
     extern uint16_t _bytes_per_frame;
@@ -815,6 +1102,7 @@ void print_streaming_timing_analysis(void)
 
     printf("=================================\r\n\r\n");
 }
+#endif /* MODEM_FSK */
 
 /* Adjust SF to optimize for streaming: reduce if margin too small, increase if room available.
  * Returns: 1 if SF was adjusted, 0 if no change needed, -1 if no feasible SF found */
@@ -823,6 +1111,13 @@ void print_streaming_timing_analysis(void)
 #define MIN_STREAMING_MARGIN_MS  10
 #define MAX_SF  12
 
+#ifdef MODEM_FSK
+/* FSK doesn't have SF - no adjustment needed */
+int adjust_sf_for_streaming(void)
+{
+    return 0;  /* No change needed for FSK */
+}
+#else /* MODEM_LORA */
 int adjust_sf_for_streaming(void)
 {
     extern uint16_t _bytes_per_frame;
@@ -932,11 +1227,57 @@ int adjust_sf_for_streaming(void)
 
     return 0;  /* No change needed */
 }
+#endif /* MODEM_FSK */
 
 /* Streaming TX configuration - type defined in radio.h */
 streaming_config_t streaming_cfg;
 
 /* Calculate streaming TX configuration based on timing analysis */
+#ifdef MODEM_FSK
+void calculate_streaming_config(void)
+{
+    extern uint16_t _bytes_per_frame;
+    extern uint8_t lora_payload_length;
+    extern uint8_t frames_per_sec;
+    extern unsigned inter_pkt_timeout;
+
+    uint8_t opus_frame_period_ms = 1000 / frames_per_sec;
+    uint8_t multi_packet_mode = (_bytes_per_frame > lora_payload_length);
+    uint8_t packets_per_frame;
+    uint32_t bitrate_bps = fsk_mod_params.br;
+    uint32_t overhead_bits = FSK_PREAMBLE_LENGTH_BITS + FSK_SYNCWORD_LENGTH_BITS + 8 + 16;
+    uint32_t pkt_toa_ms = ((lora_payload_length * 8 + overhead_bits) * 1000) / bitrate_bps;
+
+    if (multi_packet_mode) {
+        packets_per_frame = (_bytes_per_frame + lora_payload_length - 1) / lora_payload_length;
+        streaming_cfg.frames_per_packet = 0;
+        streaming_cfg.packets_per_frame = packets_per_frame;
+    } else {
+        streaming_cfg.frames_per_packet = lora_payload_length / _bytes_per_frame;
+        streaming_cfg.packets_per_frame = 1;
+        packets_per_frame = 1;
+    }
+
+    /* FSK is generally fast enough for streaming */
+    streaming_cfg.streaming_feasible = 1;
+    streaming_cfg.recommended_sf = 0;  /* N/A for FSK */
+    /* For multi-frame mode, all frames must be encoded before TX starts.
+     * For single-frame and multi-packet modes, use 2 for buffering margin. */
+    streaming_cfg.min_initial_frames = (streaming_cfg.frames_per_packet > 1) ?
+                                        streaming_cfg.frames_per_packet : 2;
+    streaming_cfg.max_payload_bytes = lora_payload_length;
+    streaming_cfg.margin_ms = opus_frame_period_ms - (pkt_toa_ms * packets_per_frame);
+
+    /* Set inter-packet timeout */
+    inter_pkt_timeout = pkt_toa_ms + 50;
+    if (streaming_cfg.packets_per_frame > 1) {
+        inter_pkt_timeout *= streaming_cfg.packets_per_frame;
+    }
+
+    printf("FSK Streaming config: bitrate=%lukbps, pkt_toa=%lums, margin=%ldms\r\n",
+           bitrate_bps / 1000, pkt_toa_ms, streaming_cfg.margin_ms);
+}
+#else /* MODEM_LORA */
 void calculate_streaming_config(void)
 {
     extern uint16_t _bytes_per_frame;
@@ -1119,8 +1460,16 @@ void calculate_streaming_config(void)
            streaming_cfg.recommended_sf,
            streaming_cfg.margin_ms);
 }
+#endif /* MODEM_FSK */
 
 /* Apply recommended SF for streaming (call on both TX and RX) */
+#ifdef MODEM_FSK
+uint8_t apply_streaming_sf(void)
+{
+    /* FSK doesn't have SF - nothing to adjust */
+    return 0;
+}
+#else /* MODEM_LORA */
 uint8_t apply_streaming_sf(void)
 {
     if (streaming_cfg.recommended_sf != lora_mod_params.sf) {
@@ -1133,6 +1482,7 @@ uint8_t apply_streaming_sf(void)
     }
     return streaming_cfg.recommended_sf;
 }
+#endif /* MODEM_FSK */
 
 /* Get minimum initial bytes for streaming TX */
 uint16_t get_streaming_initial_bytes(void)
@@ -1145,10 +1495,15 @@ void sethal_lr20xx()
 {
     lorahal.init = Init_lr20xx;
     lorahal.standby = Standby_lr20xx;
+#ifdef MODEM_FSK
+    lorahal.loRaModemConfig = FSKModemConfig_lr20xx;
+    lorahal.loRaPacketConfig = FSKPacketConfig_lr20xx;
+#else
     lorahal.loRaModemConfig = LoRaModemConfig_lr20xx;
+    lorahal.loRaPacketConfig = LoRaPacketConfig_lr20xx;
+#endif
     lorahal.setChannel = SetChannel_lr20xx;
     lorahal.set_tx_dbm = set_tx_dbm_lr20xx;
-    lorahal.loRaPacketConfig = LoRaPacketConfig_lr20xx;
     lorahal.send = Send_lr20xx;
     lorahal.printOpMode = printOpMode_lr20xx;
     lorahal.service = service_lr20xx;

@@ -21,6 +21,9 @@
 #include "main.h"
 #include "radio.h"
 #include "lr20xx_radio_fifo.h"
+#ifdef USE_FREERTOS
+#include "freertos_tasks.h"
+#endif
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -398,6 +401,11 @@ int main(void)
         Touchscreen_DrawBackground(false, 0, 0);
     }
 
+    /* Initialize audio output early to prevent floating speaker noise during rate selection.
+     * Will be reinitialized with correct rate in AudioLoopback_demo() */
+    BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE, 0, I2S_AUDIOFREQ_16K);
+    BSP_AUDIO_OUT_SetMute(AUDIO_MUTE_ON);
+
     while (ow == NULL) {
         uint16_t x, y;
         /* Check UART for rate selection: '0'-'5' or '8' */
@@ -442,6 +450,7 @@ int main(void)
                         ow = opus_wrapper_create(pressed_bitrate);
                     }
                     if (ow == NULL) {
+                        printf("ERROR: opus_wrapper_create(%d) failed\r\n", pressed_bitrate);
                         BSP_LCD_DisplayStringAt(20, 10, (uint8_t *)"opus_wrapper_create() failed", CENTER_MODE);
                         pressed_bitrate = -1;
                         HAL_Delay(500);
@@ -564,11 +573,8 @@ int main(void)
     /* frames_per_sec = sample_rate / samples_per_frame = 1000 / frame_ms */
     frames_per_sec = 1000 / opus_wrapper_get_frame_ms(ow);  /* 25 fps for 40ms, ~17 fps for 60ms */
 
-    /* radio is started after bw/sf is known */
-    start_radio();
-
-    /* Opus uses VBR, so _bytes_per_frame is approximate based on bitrate.
-     * Use the expected frame size for the selected mode. */
+    /* Calculate _bytes_per_frame BEFORE start_radio() so FSK can use it.
+     * Opus uses VBR, so _bytes_per_frame is approximate based on bitrate. */
     {
         int bitrate = opus_wrapper_get_bitrate(ow);
         int frame_ms = opus_wrapper_get_frame_ms(ow);
@@ -579,6 +585,9 @@ int main(void)
          * For 60ms frame: bytes = bitrate * 60 / 8000 = bitrate / 133 */
         _bytes_per_frame = (bitrate * frame_ms) / 8000;
     }
+
+    /* radio is started after bw/sf and _bytes_per_frame are known */
+    start_radio();
 
     printf("nsamp:%u, _bytes_per_frame:%u, frame_length_bytes:%u\r\n", nsamp, _bytes_per_frame, frame_length_bytes);
 
@@ -629,7 +638,18 @@ int main(void)
                                   0);                         /* tx_fifo_high_threshold */
     }
 
+#ifdef USE_FREERTOS
+    /* Initialize FreeRTOS tasks for concurrent encode/TX.
+     * Tasks will start when scheduler begins. */
+    freertos_tasks_init();
+    printf("FreeRTOS initialized, starting scheduler...\r\n");
+    /* Start scheduler - this never returns */
+    freertos_start();
+    /* Should never reach here */
+    printf("\e[31mFreeRTOS scheduler returned!\e[0m\r\n");
+#else
     AudioLoopback_demo();
+#endif
 
 } // ..main()
 
@@ -795,8 +815,16 @@ void lcd_print_rssi_snr(float rssi, float snr)
     char str[24];
     if (rssi == 0 && snr == 0)
         sprintf(str, "                  ");
-    else
-        sprintf(str, "%.1fdBm %.1fdB", (double)rssi, (double)snr);
+    else {
+        /* Use integer formatting to avoid heap-allocating floating point printf */
+        int rssi_int = (int)rssi;
+        int rssi_frac = (int)((rssi - rssi_int) * 10) % 10;
+        if (rssi_frac < 0) rssi_frac = -rssi_frac;
+        int snr_int = (int)snr;
+        int snr_frac = (int)((snr - snr_int) * 10) % 10;
+        if (snr_frac < 0) snr_frac = -snr_frac;
+        sprintf(str, "%d.%ddBm %d.%ddB", rssi_int, rssi_frac, snr_int, snr_frac);
+    }
 
     BSP_LCD_SetFont(&Font24);
     BSP_LCD_SetBackColor(LCD_COLOR_WHITE);
