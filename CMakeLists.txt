@@ -21,6 +21,7 @@ endif()
 cmake_minimum_required(VERSION 2.8)
 
 set(RADIO SX12XX CACHE STRING "radio device family to use")
+set(MODEM "LORA" CACHE STRING "Modulation type: LORA or FSK (LR2021 only)")
 
 # Generate GIT_HASH for freedv_api.c
 if(EXISTS ${CMAKE_SOURCE_DIR}/.git)
@@ -120,6 +121,9 @@ include(STM32746_Lib.cmake)
 # Opus codec library (alternative to codec2)
 include(Opus_Lib.cmake)
 
+# FreeRTOS for preemptive multitasking
+include(FreeRTOS_Lib.cmake)
+
 ###################################################
 
 # Macro for elf->bin
@@ -210,6 +214,7 @@ set(LORA_XCVR_SRCS
 	lora_transceiver/Src/main.c
 	lora_transceiver/Src/radio.c
 	lora_transceiver/Src/system_stm32f7xx.c
+	lora_transceiver/Src/freertos_tasks.c
 )
 
 if(${RADIO} STREQUAL SX12XX)
@@ -229,20 +234,35 @@ elseif(${RADIO} STREQUAL LR2021)
 		lr20xx/lr20xx.c
 		lr20xx/lr20xx_hal.c
 		lr20xx_driver/src/lr20xx_system.c
-		lr20xx_driver/src/lr20xx_radio_lora.c
 		lr20xx_driver/src/lr20xx_radio_fifo.c
 		lr20xx_driver/src/lr20xx_radio_common.c
 		lr20xx_driver/src/lr20xx_workarounds.c
 		lr20xx_driver/src/lr20xx_regmem.c
 	)
-	#TODO LR2021 sources here
+	# Add modem-specific driver source
+	if(${MODEM} STREQUAL "FSK")
+		set(LORA_XCVR_SRCS ${LORA_XCVR_SRCS}
+			lr20xx_driver/src/lr20xx_radio_fsk.c
+		)
+		message(STATUS "LR2021 modem: FSK")
+	else()
+		set(LORA_XCVR_SRCS ${LORA_XCVR_SRCS}
+			lr20xx_driver/src/lr20xx_radio_lora.c
+		)
+		message(STATUS "LR2021 modem: LoRa")
+	endif()
 else()
 	message(SEND_ERROR "other RADIO ${RADIO}")
 endif()
 
-set(LORA_TARGET lora_transceiver_${RADIO})
+# Set target name based on modem type
+if(${MODEM} STREQUAL "FSK")
+	set(LORA_TARGET fsk_transceiver_${RADIO})
+else()
+	set(LORA_TARGET lora_transceiver_${RADIO})
+endif()
 add_mapped_executable(${LORA_TARGET} ${LORA_XCVR_SRCS} ${SYSTEM_SRCS})
-target_link_libraries(${LORA_TARGET} stm32746gdiscovery stm32f7 opus_wrapper)
+target_link_libraries(${LORA_TARGET} stm32746gdiscovery stm32f7 opus_wrapper freertos)
 #target_compile_definitions(${LORA_TARGET} PRIVATE -DMIC_DISABLE=MIC_RIGHT)
 if(${RADIO} STREQUAL SX12XX)
 	set(RADIO_INCLUDES
@@ -257,6 +277,11 @@ elseif(${RADIO} STREQUAL LR2021)
 		${PROJECT_SOURCE_DIR}/lr20xx_driver/inc
 	)
 	target_compile_definitions(${LORA_TARGET} PRIVATE -DENABLE_LR20XX)
+	if(${MODEM} STREQUAL "FSK")
+		target_compile_definitions(${LORA_TARGET} PRIVATE -DMODEM_FSK)
+	else()
+		target_compile_definitions(${LORA_TARGET} PRIVATE -DMODEM_LORA)
+	endif()
 endif()
 target_include_directories(${LORA_TARGET} PRIVATE
 	${PROJECT_SOURCE_DIR}/lora_transceiver/Inc
@@ -264,6 +289,12 @@ target_include_directories(${LORA_TARGET} PRIVATE
 )
 elf2bin(${LORA_TARGET})
 elf2hex(${LORA_TARGET})
+
+# Make radio_lr20xx.c rebuild when key source files change, so __DATE__/__TIME__ stay current.
+# This ensures the build timestamp reflects changes to transceiver code.
+set_source_files_properties(${PROJECT_SOURCE_DIR}/lr20xx_hal/radio_lr20xx.c PROPERTIES
+	OBJECT_DEPENDS "${PROJECT_SOURCE_DIR}/lora_transceiver/Src/lora_xcvr.c;${PROJECT_SOURCE_DIR}/lora_transceiver/Src/main.c;${PROJECT_SOURCE_DIR}/lora_transceiver/Src/freertos_tasks.c;${PROJECT_SOURCE_DIR}/lora_transceiver/Inc/FreeRTOSConfig.h;${PROJECT_SOURCE_DIR}/CMakeLists.txt"
+)
 
 include_directories(${PROJECT_SOURCE_DIR})
 

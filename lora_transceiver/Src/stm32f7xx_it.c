@@ -25,6 +25,10 @@
 #ifdef ENABLE_LR20XX
 #include "pinDefs_lr20xx.h"
 #endif
+#ifdef USE_FREERTOS
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 
 
 /** @addtogroup STM32F7xx_HAL_Examples
@@ -116,21 +120,15 @@ void UsageFault_Handler(void)
   }
 }
 
+/* FreeRTOS provides SVC_Handler and PendSV_Handler via port.c assembly code.
+ * These are only needed when NOT using FreeRTOS. */
+#ifndef USE_FREERTOS
 /**
   * @brief  This function handles SVCall exception.
   * @param  None
   * @retval None
   */
 void SVC_Handler(void)
-{
-}
-
-/**
-  * @brief  This function handles Debug Monitor exception.
-  * @param  None
-  * @retval None
-  */
-void DebugMon_Handler(void)
 {
 }
 
@@ -142,6 +140,16 @@ void DebugMon_Handler(void)
 void PendSV_Handler(void)
 {
 }
+#endif /* !USE_FREERTOS */
+
+/**
+  * @brief  This function handles Debug Monitor exception.
+  * @param  None
+  * @retval None
+  */
+void DebugMon_Handler(void)
+{
+}
 
 /**
   * @brief  This function handles SysTick Handler.
@@ -151,7 +159,73 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   HAL_IncTick();
+#ifdef USE_FREERTOS
+  /* Only call FreeRTOS tick handler if scheduler has started */
+  extern void xPortSysTickHandler(void);
+  if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
+  {
+    xPortSysTickHandler();
+  }
+#endif
 }
+
+#ifdef USE_FREERTOS
+/**
+  * @brief  FreeRTOS stack overflow hook - called when stack overflow is detected
+  */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+  (void)xTask;
+  /* Print task name before halting - use direct UART write to avoid further stack usage */
+  volatile char *msg = "\r\n*** STACK OVERFLOW: ";
+  volatile char *name = pcTaskName;
+  /* Direct output via ITM or just halt with task name in register for debugger */
+  taskDISABLE_INTERRUPTS();
+  /* Keep name in register for GDB inspection */
+  __asm volatile("mov r0, %0" : : "r"(name));
+  for (;;);
+}
+
+/**
+  * @brief  FreeRTOS malloc failed hook - called when pvPortMalloc fails
+  */
+void vApplicationMallocFailedHook(void)
+{
+  /* Infinite loop on malloc failure */
+  taskDISABLE_INTERRUPTS();
+  for (;;);
+}
+
+/**
+  * @brief  FreeRTOS static allocation support - provide idle task stack/TCB
+  */
+void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
+                                   StackType_t **ppxIdleTaskStackBuffer,
+                                   uint32_t *pulIdleTaskStackSize)
+{
+  static StaticTask_t xIdleTaskTCB;
+  static StackType_t uxIdleTaskStack[configMINIMAL_STACK_SIZE];
+
+  *ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
+  *ppxIdleTaskStackBuffer = uxIdleTaskStack;
+  *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
+}
+
+/**
+  * @brief  FreeRTOS static allocation support - provide timer task stack/TCB
+  */
+void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
+                                    StackType_t **ppxTimerTaskStackBuffer,
+                                    uint32_t *pulTimerTaskStackSize)
+{
+  static StaticTask_t xTimerTaskTCB;
+  static StackType_t uxTimerTaskStack[configTIMER_TASK_STACK_DEPTH];
+
+  *ppxTimerTaskTCBBuffer = &xTimerTaskTCB;
+  *ppxTimerTaskStackBuffer = uxTimerTaskStack;
+  *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
+}
+#endif /* USE_FREERTOS */
 
 /******************************************************************************/
 /*                 STM32F7xx Peripherals Interrupt Handlers                   */
@@ -270,9 +344,14 @@ void DMA2D_IRQHandler(void)
   for (;;) asm("nop");
 }
 
+#ifdef ENABLE_LR20XX
+/* Flag set by DIO8 interrupt - checked by LR20xx_service() for faster response */
+volatile uint8_t dio8_irq_pending = 0;
+#endif /* ENABLE_LR20XX */
+
 /**
   * @}
-  */ 
+  */
 
 /**
   * @}

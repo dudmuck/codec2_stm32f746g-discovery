@@ -3,7 +3,11 @@
 #include "lr20xx_system.h"
 #include "lr20xx_radio_common.h"
 #include "lr20xx_radio_fifo.h"
+#ifdef MODEM_FSK
+#include "lr20xx_radio_fsk.h"
+#else
 #include "lr20xx_radio_lora.h"
+#endif
 #include "pinDefs_lr20xx.h"
 #include "stm32f7xx_hal.h"
 
@@ -64,7 +68,9 @@ void init_lr20xx()
     GPIO_InitStructure.Mode = GPIO_MODE_IT_RISING;
     HAL_GPIO_Init(DIO8_PORT, &GPIO_InitStructure);
 
-    HAL_NVIC_SetPriority(DIO8_IRQn, 0x0F, 0x00);
+    /* DIO8 interrupt priority: higher priority for faster TX_DONE response.
+     * Must be >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY (5) for FreeRTOS. */
+    HAL_NVIC_SetPriority(DIO8_IRQn, 0x06, 0x00);
     HAL_NVIC_EnableIRQ(DIO8_IRQn);
 }
 
@@ -74,13 +80,18 @@ void LR20xx_setStandby(lr20xx_system_standby_mode_t sm)
 	LR20xx_chipMode = LR20XX_SYSTEM_CHIP_MODE_STBY_RC;
 }
 
+/* External flag set by DIO8 interrupt in stm32f7xx_it.c */
+extern volatile uint8_t dio8_irq_pending;
+
 bool LR20xx_service()
 {
     if (BUSY) {
         return true;
     }
 
-    while (DIO8) {
+    /* Check interrupt flag for faster response */
+    while (DIO8 || dio8_irq_pending) {
+        dio8_irq_pending = 0;  /* Clear flag */
         lr20xx_system_irq_mask_t irqFlags;
         ASSERT_LR20XX_RC( lr20xx_system_get_and_clear_irq_status(NULL, &irqFlags) );
 
@@ -119,10 +130,17 @@ bool LR20xx_service()
                         }
                     }
                     if (LR20xx_rxDone) {
+#ifdef MODEM_FSK
+                        lr20xx_radio_fsk_packet_status_t pkt_status = { 0 };
+                        ASSERT_LR20XX_RC( lr20xx_radio_fsk_get_packet_status(NULL, &pkt_status) );
+                        float rssi = pkt_status.rssi_avg_in_dbm - (pkt_status.rssi_avg_half_dbm_count * 0.5f);
+                        float snr = 0.0f;  /* FSK doesn't provide SNR */
+#else
                         lr20xx_radio_lora_packet_status_t pkt_status = { 0 };
                         ASSERT_LR20XX_RC( lr20xx_radio_lora_get_packet_status(NULL, &pkt_status) );
                         float rssi = pkt_status.rssi_pkt_in_dbm - (pkt_status.rssi_pkt_half_dbm_count * 0.5f);
                         float snr = pkt_status.snr_pkt_raw / 4.0f;
+#endif
                         LR20xx_rxDone(size, rssi, snr);
                     }
                 }

@@ -9,9 +9,15 @@
 #include "string.h"
 #include "radio.h"
 #include "opus_wrapper.h"
+#include "test_audio_8000.h"
+#include "test_audio_16000.h"
+#include "test_audio_48000.h"
 #ifdef ENABLE_LR20XX
 #include "lr20xx.h"
 #include "lr20xx_radio_fifo.h"
+#endif
+#ifdef USE_FREERTOS
+#include "freertos_tasks.h"
 #endif
 
 extern struct OPUS_WRAPPER *ow;
@@ -92,6 +98,9 @@ uint32_t enc_time_max = 0;               /* max encode time in ms */
 /* TX cycle time monitoring - detect when encode+TX exceeds frame period */
 uint32_t last_encode_tick = 0;           /* timestamp of last encode start */
 uint32_t tx_cycle_overrun_count = 0;     /* count of cycles exceeding frame period */
+
+/* TX buffer write position - shared with radio_lr20xx.c for memmove sync */
+volatile uint16_t tx_buf_idx = 0;
 uint32_t tx_cycle_max = 0;               /* max cycle time in ms */
 
 volatile uint8_t user_button_pressed;   // flag
@@ -102,6 +111,15 @@ volatile uint8_t uart_tx_active;   // flag for UART-controlled TX
 
 /* Test mode variables */
 uint8_t test_mode;              // flag for sequence number test mode
+uint8_t audio_test_mode;        // flag for test audio TX mode
+uint32_t audio_test_idx;        // index into test audio array (shared with freertos_tasks.c)
+const int16_t *test_audio_ptr;  // pointer to test audio data
+uint32_t test_audio_len;        // length of test audio data
+uint8_t sine_playback_mode;     // flag for direct sine wave playback on speaker
+static uint16_t sine_play_idx;  // sine table index for playback
+static uint32_t audioRate_;     // actual I2S sample rate for sine step calculation
+static uint16_t sine_step;      // sine table step for 1kHz at current sample rate (playback)
+uint16_t encoder_sine_step;     // sine table step for 1kHz at Opus sample rate (encoding)
 uint16_t tx_seq_num;            // transmitter sequence number
 uint16_t expected_rx_seq;       // receiver expected sequence number
 uint32_t rx_frame_count;        // total frames received
@@ -115,6 +133,9 @@ uint32_t last_rx_pkt_tick;      // timestamp of last received packet
 
 #ifdef ENABLE_LR20XX
 extern uint32_t get_fifo_rx_irq_count(void);
+extern uint32_t get_fifo_rx_total_bytes(void);
+extern uint16_t get_fifo_rx_max_idx(void);
+extern void reset_fifo_rx_debug(void);
 /* streaming_config_t and streaming_cfg already defined in radio.h (lr20xx_hal) */
 #endif
 
@@ -291,6 +312,9 @@ void BSP_AUDIO_IN_TransferComplete_CallBack(void)
     audio_rec_buffer_state = BUFFER_OFFSET_FULL;
     audio_in_full_pending = 1;  /* For multi-packet mode: queue callback */
     dma_during_encode = 1;  /* signal that DMA completed during processing */
+#ifdef USE_FREERTOS
+    freertos_audio_full_ready_FromISR();
+#endif
 }
 
 /**
@@ -303,6 +327,9 @@ void BSP_AUDIO_IN_HalfTransfer_CallBack(void)
     audio_rec_buffer_state = BUFFER_OFFSET_HALF;
     audio_in_half_pending = 1;  /* For multi-packet mode: queue callback */
     dma_during_encode = 1;  /* signal that DMA completed during processing */
+#ifdef USE_FREERTOS
+    freertos_audio_half_ready_FromISR();
+#endif
 }
 
 #define LFSR_INIT       0x1ff
@@ -427,7 +454,47 @@ void svc_uart()
         rx_overflow_count = 0;
         rx_overflow_bytes = 0;
         last_rx_pkt_tick = 0;
+#ifdef ENABLE_LR20XX
+        reset_fifo_rx_debug();
+#endif
         printf("Test mode %s\r\n", test_mode ? "ON" : "OFF");
+    } else if (rxchar == 'A') {
+        audio_test_mode ^= 1;
+        audio_test_idx = 0;
+        if (audio_test_mode) {
+            /* Select test audio based on Opus sample rate */
+            int opus_sr = opus_wrapper_get_sample_rate(ow);
+            switch (opus_sr) {
+                case 8000:
+                    test_audio_ptr = test_audio_8000;
+                    test_audio_len = TEST_AUDIO_8000_SAMPLES;
+                    break;
+                case 16000:
+                    test_audio_ptr = test_audio_16000;
+                    test_audio_len = TEST_AUDIO_16000_SAMPLES;
+                    break;
+                case 48000:
+                default:
+                    test_audio_ptr = test_audio_48000;
+                    test_audio_len = TEST_AUDIO_48000_SAMPLES;
+                    break;
+            }
+            printf("Audio test mode ON (voice @ %dHz, %lu samples)\r\n", opus_sr, test_audio_len);
+        } else {
+            printf("Audio test mode OFF\r\n");
+        }
+    } else if (rxchar == 'S') {
+        /* Toggle local sine wave playback on speaker for audio reference */
+        sine_playback_mode ^= 1;
+        sine_play_idx = 0;
+        if (!sine_playback_mode) {
+            /* Clear audio buffers to stop DMA from replaying old sine data */
+            memset(audio_buffer_out, 0, audio_block_size);
+            memset(audio_buffer_out_B, 0, audio_block_size);
+            SCB_CleanDCache_by_Addr((uint32_t*)audio_buffer_out, audio_block_size);
+            SCB_CleanDCache_by_Addr((uint32_t*)audio_buffer_out_B, audio_block_size);
+        }
+        printf("Sine playback %s (direct to speaker)\r\n", sine_playback_mode ? "ON" : "OFF");
     } else if (rxchar == '?') {
         printf("Test stats: frames=%lu dropped=%lu dup=%lu corrupt=%lu gaps=%lu overflow=%lu/%lu\r\n",
                rx_frame_count, rx_dropped_count, rx_duplicate_count, rx_corrupt_count, rx_gap_count,
@@ -435,7 +502,8 @@ void svc_uart()
         printf("enc_max:%lu ms overruns:%lu (budget %dms)\r\n",
                enc_time_max, dma_overrun_count, 1000 / frames_per_sec);
 #ifdef ENABLE_LR20XX
-        printf("  fifo_rx_irqs=%lu\r\n", get_fifo_rx_irq_count());
+        printf("  fifo_rx_irqs=%lu total_bytes=%lu max_idx=%u\r\n",
+               get_fifo_rx_irq_count(), get_fifo_rx_total_bytes(), get_fifo_rx_max_idx());
 #endif
     } else if (rxchar == 'b' || rxchar == 'B') {
         /* Step bandwidth only, let adjust_sf_for_streaming() set optimal SF
@@ -596,22 +664,32 @@ void decimated_encode(const short *in, uint8_t *out)
     unsigned i, x;
     int sum;
 
-    for (x = 0; x < nsamp; x++) {
-        sum = 0;
-        for (i = 0; i < navgs_; i++) {
-            if (micRightEn && micLeftEn) {
-                int v = *in++;
-                v += *in++;
-                sum += (v / 2);
-            } else if (micRightEn) {
-                sum += *in++;
-                in++;
-            } else if (micLeftEn) {
-                in++;
-                sum += *in++;
-            }
+    /* Audio test mode: use recorded voice sample instead of microphone */
+    if (audio_test_mode && test_audio_ptr != NULL) {
+        for (x = 0; x < nsamp; x++) {
+            to_encoder[x] = test_audio_ptr[audio_test_idx];
+            audio_test_idx++;
+            if (audio_test_idx >= test_audio_len)
+                audio_test_idx = 0;  /* loop */
         }
-        to_encoder[x] = sum / navgs_;
+    } else {
+        for (x = 0; x < nsamp; x++) {
+            sum = 0;
+            for (i = 0; i < navgs_; i++) {
+                if (micRightEn && micLeftEn) {
+                    int v = *in++;
+                    v += *in++;
+                    sum += (v / 2);
+                } else if (micRightEn) {
+                    sum += *in++;
+                    in++;
+                } else if (micLeftEn) {
+                    in++;
+                    sum += *in++;
+                }
+            }
+            to_encoder[x] = sum / navgs_;
+        }
     }
 
     {
@@ -825,34 +903,38 @@ uint8_t fdb;
 
 static volatile uint32_t put_spkr_half_count;
 static volatile uint32_t put_spkr_full_count;
-static short *last_decoded_frame;  /* For feeding audio when no new decode ready */
+short *last_decoded_frame;  /* For feeding audio when no new decode ready */
 
 static void fill_audio_buffer(short *outPtr);  /* Forward declaration */
 
 /* Non-blocking: service pending audio callback with last decoded frame */
 void service_audio_output(void)
 {
-    if (!currently_decoding)
-        return;
-
-    if (last_decoded_frame == NULL)
-        return;
+    /* Sine playback mode works independently - doesn't need decoding active */
+    if (!sine_playback_mode) {
+        if (!currently_decoding)
+            return;
+        if (last_decoded_frame == NULL)
+            return;
+    }
 
     /* Use separate pending flags to avoid losing callbacks.
      * Only fill a buffer if it hasn't been filled with this frame yet.
      * This prevents the same frame from being written to both buffers,
      * which would cause audio repetition and clicks. */
     short *savedDecBuf = decBuf;
-    decBuf = last_decoded_frame;
+    if (!sine_playback_mode)
+        decBuf = last_decoded_frame;
 
+    /* Handle ONE pending callback per service call.
+     * If both are pending, only fill the first one - the other will be filled
+     * by the next call. Filling both with the same frame causes audio to repeat. */
     if (audio_half_pending) {
         audio_half_pending = 0;
         audio_play_state_ = AUDIO_PLAY_NONE;  /* Clear to prevent false overrun count */
         put_spkr_half_count++;
         fill_audio_buffer((short*)audio_buffer_out);
-    }
-
-    if (audio_full_pending) {
+    } else if (audio_full_pending) {
         audio_full_pending = 0;
         audio_play_state_ = AUDIO_PLAY_NONE;  /* Clear to prevent false overrun count */
         put_spkr_full_count++;
@@ -866,6 +948,19 @@ static void fill_audio_buffer(short *outPtr)
 {
     unsigned x;
     short *bufStart = outPtr;
+
+    /* Sine playback mode: output 1kHz sine wave directly for reference */
+    if (sine_playback_mode) {
+        for (x = 0; x < nsamp * navgs_; x++) {
+            int16_t sample = (int16_t)(sine_table[sine_play_idx] - 0x8000);
+            sample /= 4;  /* reduce amplitude to match encoder input level */
+            *outPtr++ = sample;  /* left */
+            *outPtr++ = sample;  /* right */
+            sine_play_idx = (sine_play_idx + sine_step) % SINE_TABLE_LENGTH;  /* 1kHz at any sample rate */
+        }
+        SCB_CleanDCache_by_Addr((uint32_t*)bufStart, nsamp * navgs_ * 4);
+        return;
+    }
 
     if (navgs_ == 1) {
         /* No upsampling - copy mono samples to stereo output */
@@ -895,53 +990,33 @@ static void fill_audio_buffer(short *outPtr)
 
 void put_spkr()
 {
-    short *outPtr = NULL;
-    AudioPlay_e state;
+    /* Wait for audio DMA callback before filling buffer.
+     * In multi-packet mode, frames are decoded faster than audio callbacks fire,
+     * so we must block here to prevent frames from being lost.
+     * Use sticky pending flags which persist until cleared - the blocking wait
+     * on audio_play_state_ missed callbacks during Opus decode (~26ms). */
 
-    /* Multi-packet mode: use separate pending flags to avoid lost callbacks.
-     * Handle any pending callbacks with the newly decoded frame. */
-    if (streaming_cfg.packets_per_frame > 1) {
-        if (audio_half_pending) {
-            audio_half_pending = 0;
-            audio_play_state_ = AUDIO_PLAY_NONE;  /* Clear to prevent false overrun count */
-            put_spkr_half_count++;
-            fill_audio_buffer((short*)audio_buffer_out);
-        }
-        if (audio_full_pending) {
-            audio_full_pending = 0;
-            audio_play_state_ = AUDIO_PLAY_NONE;  /* Clear to prevent false overrun count */
-            put_spkr_full_count++;
-            fill_audio_buffer((short*)audio_buffer_out_B);
-        }
-        fdb ^= 1;
-        goto frame_timing;
-    }
-
-    /* Single-packet mode: block until callback using original state variable */
-    while (audio_play_state_ == AUDIO_PLAY_NONE)
+    /* Wait for at least one callback using pending flags */
+    while (!audio_half_pending && !audio_full_pending)
         asm("nop");
 
-    /* Atomically read and clear state to avoid race condition where
-     * a callback overwrites the state between our check and clear */
-    __disable_irq();
-    state = audio_play_state_;
-    audio_play_state_ = AUDIO_PLAY_NONE;
-    __enable_irq();
-
-    if (state == AUDIO_PLAY_FULL) {
-        put_spkr_full_count++;
-        outPtr = (short*)audio_buffer_out_B;
-    } else if (state == AUDIO_PLAY_HALF) {
+    /* Handle ONE pending callback per decoded frame.
+     * If both are pending, only fill the first one - the other will be filled
+     * by the next decoded frame. Filling both with the same frame causes audio
+     * to repeat (pitch sounds lower/slower). */
+    if (audio_half_pending) {
+        audio_half_pending = 0;
+        audio_play_state_ = AUDIO_PLAY_NONE;  /* Clear to prevent false overrun count */
         put_spkr_half_count++;
-        outPtr = (short*)audio_buffer_out;
+        fill_audio_buffer((short*)audio_buffer_out);
+    } else if (audio_full_pending) {
+        audio_full_pending = 0;
+        audio_play_state_ = AUDIO_PLAY_NONE;
+        put_spkr_full_count++;
+        fill_audio_buffer((short*)audio_buffer_out_B);
     }
 
-    if (outPtr)
-        fill_audio_buffer(outPtr);
-
     fdb ^= 1;
-
-frame_timing:
 
     if (++frameCnt == frames_per_sec) {
         printf("%lums for %u frames\r\n", uwTick - tickAtFrameSecond, frames_per_sec);
@@ -968,6 +1043,20 @@ void parse_rx()
         }
         last_rx_pkt_tick = uwTick;
 
+        /* Debug: print received sequence numbers for multi-frame mode */
+        if (streaming_cfg.frames_per_packet > 1) {
+            static uint8_t rx_debug_cnt = 0;
+            if (rx_debug_cnt < 5) {
+                uint16_t f, seq;
+                printf("RX_BUF:");
+                for (f = 0; f < rx_size; f += _bytes_per_frame) {
+                    seq = lorahal.rx_buf[f] | (lorahal.rx_buf[f + 1] << 8);
+                    printf(" [%u]=%u", f, seq);
+                }
+                printf("\r\n");
+                rx_debug_cnt++;
+            }
+        }
         for (n = 0; n < rx_size; n += _bytes_per_frame) {
             test_mode_decode(&lorahal.rx_buf[n]);
         }
@@ -1014,6 +1103,7 @@ void streaming_rx_decode(void)
     static short from_decoderB[OPUS_WRAPPER_SAMPLES_PER_FRAME_MAX];
 
     /* Check if new frames are available */
+    static uint8_t loop_debug_count = 0;
     while (rx_decode_idx + _bytes_per_frame <= rx_fifo_read_idx) {
         /* Don't decode past packet boundary (single-packet mode only).
          * In multi-packet mode, the while loop condition handles this.
@@ -1022,6 +1112,11 @@ void streaming_rx_decode(void)
         if (streaming_cfg.packets_per_frame == 1) {
             uint16_t max_decode = (rx_size != -1) ? (uint16_t)rx_size : lora_payload_length;
             if (rx_decode_idx >= max_decode) {
+                if (test_mode && loop_debug_count < 10) {
+                    printf("DBG break: dec=%u >= max=%u (rx_size=%d)\r\n",
+                           rx_decode_idx, max_decode, rx_size);
+                    loop_debug_count++;
+                }
                 break;
             }
         }
@@ -1070,6 +1165,12 @@ void streaming_rx_decode(void)
         }
 
         rx_decode_idx += _bytes_per_frame;
+    }
+    /* Debug: show why loop exited */
+    if (test_mode && loop_debug_count < 10 && rx_decode_idx < lora_payload_length) {
+        printf("DBG loop exit: dec=%u + bpf=%u > fifo=%u (expect %u)\r\n",
+               rx_decode_idx, _bytes_per_frame, rx_fifo_read_idx, lora_payload_length);
+        loop_debug_count++;
     }
 }
 #endif /* ENABLE_LR20XX */
@@ -1262,7 +1363,6 @@ void AudioLoopback_demo(void)
     uint8_t scratch[8];
     uint8_t mid = 0;
     TS_StateTypeDef prev_TS_State;
-    uint16_t tx_buf_idx = 0;
     uint32_t audioRate;
     int opus_sr;
 
@@ -1287,8 +1387,18 @@ void AudioLoopback_demo(void)
     audio_block_size = nsamp * navgs_ * 4;  /* stereo, 2 bytes per sample */
     step = 1.0 / navgs_;
 
-    printf("audioRate=%lu, opus_sr=%d, navgs=%u, nsamp=%u, block=%u, complexity=%d\r\n",
-           audioRate, opus_sr, navgs_, nsamp, audio_block_size, opus_wrapper_get_complexity(ow));
+    /* Store audio rate for sine wave step calculation */
+    audioRate_ = audioRate;
+    /* Calculate sine step for 1kHz: step = 256 * 1000 / sample_rate
+     * Multiply by 4 to compensate for DMA buffer being 4x larger than one frame */
+    sine_step = (256 * 1000 * 4) / audioRate;
+    if (sine_step < 1) sine_step = 1;
+    /* Encoder sine step is based on Opus sample rate (no 4x factor needed) */
+    encoder_sine_step = (256 * 1000) / opus_sr;
+    if (encoder_sine_step < 1) encoder_sine_step = 1;
+
+    printf("audioRate=%lu, opus_sr=%d, navgs=%u, nsamp=%u, block=%u, complexity=%d, sine_step=%u\r\n",
+           audioRate, opus_sr, navgs_, nsamp, audio_block_size, opus_wrapper_get_complexity(ow), sine_step);
 
     BSP_LCD_SetFont(&Font12);
     /* Initialize Audio Recorder */
@@ -1331,6 +1441,12 @@ void AudioLoopback_demo(void)
     lora_rx_begin();
     currently_decoding = 0;
     rx_size = -1;
+
+#ifdef USE_FREERTOS
+    /* Enable concurrent encoding now that audio is initialized.
+     * This allows the encoder task to run in parallel with TX. */
+    freertos_enable_concurrent_encode();
+#endif
 
     /* Touchscreen polling interval: longer for high-rate modes (64K/96K with 60ms frames)
      * to ensure lorahal.service() is called with lowest latency */
@@ -1376,12 +1492,22 @@ void AudioLoopback_demo(void)
                 last_encode_tick = 0;       /* Reset cycle time measurement */
                 tx_cycle_overrun_count = 0;
                 tx_cycle_max = 0;
+                if (streaming_cfg.packets_per_frame > 1) {
+                    printf("keyup multi-pkt: bpf=%u, init=%u\r\n",
+                           _bytes_per_frame, get_streaming_initial_bytes());
+                }
+#endif
+#ifdef USE_FREERTOS
+                /* Signal encoder task that TX session is starting */
+                freertos_tx_session_start();
 #endif
             }
 
-            /* Multi-packet mode: use pending flags to avoid losing audio callbacks.
+            /* Use pending flags to avoid losing audio callbacks during TX.
+             * Needed for both multi-packet mode (packets_per_frame > 1) and
+             * multi-frame mode (frames_per_packet > 1) where TX time is significant.
              * If audio_rec_buffer_state was cleared but a callback fired, restore it. */
-            if (streaming_cfg.packets_per_frame > 1) {
+            if (streaming_cfg.packets_per_frame > 1 || streaming_cfg.frames_per_packet > 1) {
                 if (audio_rec_buffer_state == BUFFER_OFFSET_NONE) {
                     /* Check pending flags in order: process HALF before FULL */
                     if (audio_in_half_pending) {
@@ -1417,28 +1543,84 @@ void AudioLoopback_demo(void)
                         }
                     } else if (tx_fifo_idx >= tx_total_size) {
                         /* Normal mode: FIFO fully loaded - start buffering next packet */
-                        tx_buf_idx = 0;
-                        mid = 0;
-                        tx_buf_produced = 0;
                         stream_state = STREAM_BUFFERING_NEXT;
+                        /* DON'T reset tx_buf_idx - allow pipelined encoding to continue
+                         * at current offset. Frames encoded during TX will be preserved
+                         * and moved to buffer start when TxDone fires. */
                         /* Fall through to encode for next packet */
+                    } else if (streaming_cfg.frames_per_packet > 1) {
+                        /* Multi-frame mode: allow pipelined encoding during FIFO load.
+                         * Continue encoding at current tx_buf_idx (beyond 240).
+                         * Transition to BUFFERING_NEXT to allow encoding to continue. */
+                        stream_state = STREAM_BUFFERING_NEXT;
+                        /* Fall through to encode */
                     } else {
-                        /* Still loading FIFO - wait */
-                        audio_rec_buffer_state = BUFFER_OFFSET_NONE;
-                        lorahal.service();
-                        goto skip_encode;
+                        /* Single-frame mode: wait for FIFO to load. */
+#ifdef USE_FREERTOS
+                        if (freertos_concurrent_encode_enabled()) {
+                            /* In concurrent mode, continue getting frames from encoder
+                             * task but stay in STREAM_WAIT_TX so Send_lr20xx_fifo_continue()
+                             * can still feed the FIFO. Don't transition to BUFFERING_NEXT
+                             * until FIFO is fully loaded (handled by tx_fifo_idx check above).
+                             * Fall through to get encoded frames. */
+                        } else
+#endif
+                        {
+                            lorahal.service();
+                            goto skip_encode;
+                        }
                     }
                 }
 
                 /* State machine: IDLE with non-zero tx_buf_idx means TxDone just fired
-                 * Reset indices BEFORE encoding to avoid buffer overflow */
+                 * Reset indices BEFORE encoding to avoid buffer overflow.
+                 * For pipelined modes, preserve any buffered data that wasn't transmitted
+                 * (frames encoded during TX that need to go in the next packet). */
                 if (stream_state == STREAM_IDLE && tx_buf_idx > 0) {
-                    tx_buf_idx = 0;
-                    mid = 0;
+                    if (tx_buf_idx > tx_total_size) {
+                        /* Pipelined encoding: preserve untransmitted data.
+                         * tx_total_size is the bytes just transmitted.
+                         * Move remaining data to start of buffer.
+                         * Works for both multi-packet and multi-frame modes. */
+                        uint16_t remaining = tx_buf_idx - tx_total_size;
+                        memmove(LR20xx_tx_buf, &LR20xx_tx_buf[tx_total_size], remaining);
+                        tx_buf_idx = remaining;
+                        tx_buf_produced = remaining;
+                        mid = 0;  /* Reset mid since buffer positions changed */
+
+                        /* If we have enough data, start TX immediately (no gap) */
+                        if (remaining >= get_streaming_initial_bytes()) {
+                            uint16_t tx_size = (streaming_cfg.packets_per_frame > 1) ?
+                                               _bytes_per_frame : lora_payload_length;
+                            /* Debug: show what we're about to transmit */
+                            if (test_mode) {
+                                uint16_t tx_seq = LR20xx_tx_buf[0] | (LR20xx_tx_buf[1] << 8);
+                                static uint8_t idle_tx_dbg = 0;
+                                if (idle_tx_dbg < 10) {
+                                    printf("IDLE_TX: seq=%u rem=%u\r\n", tx_seq, remaining);
+                                    idle_tx_dbg++;
+                                }
+                            }
+                            tx_encoded(tx_size);
+                            stream_state = STREAM_TX_ACTIVE;
+                            /* Transition to WAIT_TX if we've filled the TX quota */
+                            if (tx_buf_idx >= tx_size) {
+                                stream_state = STREAM_WAIT_TX;
+                            }
+                        } else {
+                            stream_state = STREAM_ENCODING;
+                        }
+                    } else {
+                        tx_buf_idx = 0;
+                        mid = 0;
+                        stream_state = STREAM_ENCODING;
+                    }
+                    cycleDur = uwTick - cycleStartAt;
+                    cycleStartAt = uwTick;
                 }
 
-                /* State machine: transition IDLE -> ENCODING on new cycle */
-                if (tx_buf_idx == 0 && mid == 0 && stream_state == STREAM_IDLE) {
+                /* State machine: transition IDLE -> ENCODING on new cycle (fresh start) */
+                if (mid == 0 && stream_state == STREAM_IDLE) {
                     stream_state = STREAM_ENCODING;
                     tx_buf_produced = 0;
                     cycleDur = uwTick - cycleStartAt;
@@ -1458,7 +1640,13 @@ void AudioLoopback_demo(void)
                     inPtr = (short*)audio_buffer_in;
                     audio_in_half_pending = 0;  /* Clear pending flag */
                 }
-                audio_rec_buffer_state = BUFFER_OFFSET_NONE;
+#ifdef USE_FREERTOS
+                /* In concurrent mode, don't clear audio_rec_buffer_state yet.
+                 * We need it to remain set until we successfully get the encoded frame
+                 * from the encoder task. Clear it after successful frame retrieval. */
+                if (!freertos_concurrent_encode_enabled())
+#endif
+                    audio_rec_buffer_state = BUFFER_OFFSET_NONE;
 
                 /* TX cycle time monitoring: measure time between encodes.
                  * If cycle time > frame period, we're falling behind real-time. */
@@ -1480,13 +1668,93 @@ void AudioLoopback_demo(void)
                     last_encode_tick = now;
                 }
 
+                /* Bounds check: prevent buffer overflow if encoding outpaces TX.
+                 * This can happen in single-frame mode during BUFFERING_NEXT state. */
+                if (tx_buf_idx + _bytes_per_frame > LR20XX_BUF_SIZE) {
+                    static uint8_t overflow_warn_cnt = 0;
+                    if (overflow_warn_cnt < 5) {
+                        printf("\e[31mTX_BUF overflow prevented: idx=%u + bpf=%u > %u\e[0m\r\n",
+                               tx_buf_idx, _bytes_per_frame, LR20XX_BUF_SIZE);
+                        overflow_warn_cnt++;
+                    }
+                    lorahal.service();
+                    goto skip_encode;
+                }
+
                 /* Opus encode: one frame per callback */
-                decimated_encode((short*)inPtr, &lorahal.tx_buf[tx_buf_idx]);
+#ifdef USE_FREERTOS
+                /* In concurrent mode, get encoded frame from encoder task instead of encoding here.
+                 * This allows encoding to happen in parallel with TX transmission. */
+                if (freertos_concurrent_encode_enabled()) {
+                    /* Get encoded frame from encoder task */
+                    int32_t enc_len = freertos_get_encoded_frame(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+                    if (enc_len <= 0) {
+                        /* No encoded frame ready yet - wait for encoder task.
+                         * Don't clear audio_rec_buffer_state so we retry on next loop.
+                         * IMPORTANT: yield to let encoder task run (it has lower priority) */
+                        static uint32_t wait_count = 0;
+                        if ((++wait_count % 100) == 1) {
+                            printf("MAIN: waiting for encoder (audio_state=%d)\r\n", audio_rec_buffer_state);
+                        }
+
+                        /* CRITICAL: Check if we have buffered data ready to send.
+                         * Without this, TX gaps occur when encoder is slow (loud audio).
+                         * Check both IDLE (just after TxDone) and ENCODING (normal state). */
+                        if ((stream_state == STREAM_IDLE || stream_state == STREAM_ENCODING) &&
+                            tx_buf_idx >= get_streaming_initial_bytes()) {
+                            uint16_t tx_size = (streaming_cfg.packets_per_frame > 1) ?
+                                               _bytes_per_frame : lora_payload_length;
+                            tx_encoded(tx_size);
+                            stream_state = STREAM_TX_ACTIVE;
+                            if (tx_buf_idx >= tx_size) {
+                                stream_state = STREAM_WAIT_TX;
+                            }
+                        }
+
+                        lorahal.service();
+                        vTaskDelay(1);  /* Yield to encoder task */
+                        goto skip_encode;
+                    }
+                    /* Frame obtained from encoder task - now clear audio_rec_buffer_state */
+                    static uint32_t got_count = 0;
+                    if (++got_count <= 3) {
+                        printf("MAIN: got frame %lu len=%ld\r\n", got_count, enc_len);
+                    }
+                    audio_rec_buffer_state = BUFFER_OFFSET_NONE;
+                } else
+#endif
+                {
+                    /* Non-concurrent mode: encode directly in main loop */
+                    decimated_encode((short*)inPtr, &lorahal.tx_buf[tx_buf_idx]);
+                }
 
                 if (test_mode) {
                     /* Test mode: overwrite encoded data with sequence numbers.
                      * Opus encode still runs above for realistic timing. */
                     test_mode_encode(&lorahal.tx_buf[tx_buf_idx], _bytes_per_frame);
+
+                    /* Debug: verify byte 288 is written correctly for 64K mode */
+                    if (_bytes_per_frame == 480) {
+                        static uint8_t byte288_debug_cnt = 0;
+                        uint8_t expect_288 = (uint8_t)(tx_seq_num - 1 + 288);  /* tx_seq_num was already incremented */
+                        uint8_t actual_288 = lorahal.tx_buf[tx_buf_idx + 288];
+                        if (byte288_debug_cnt < 3) {
+                            printf("TX byte[288]=%02x expect=%02x at idx=%u\r\n",
+                                   actual_288, expect_288, tx_buf_idx + 288);
+                            byte288_debug_cnt++;
+                        }
+                    }
+                    /* Debug: verify each frame for 16K mode */
+                    if (streaming_cfg.frames_per_packet > 1) {
+                        static uint8_t enc_debug_cnt = 0;
+                        if (enc_debug_cnt < 12) {
+                            uint16_t written_seq = lorahal.tx_buf[tx_buf_idx] |
+                                                   (lorahal.tx_buf[tx_buf_idx + 1] << 8);
+                            printf("ENC: idx=%u seq=%u state=%d\r\n",
+                                   tx_buf_idx, written_seq, stream_state);
+                            enc_debug_cnt++;
+                        }
+                    }
                 }
                 tx_buf_idx += _bytes_per_frame;
 
@@ -1504,6 +1772,37 @@ void AudioLoopback_demo(void)
                      * one LoRa packet containing multiple frames. */
                     uint16_t tx_size = (streaming_cfg.packets_per_frame > 1) ?
                                        _bytes_per_frame : lora_payload_length;
+                    /* Debug: show initial TX start */
+                    if (test_mode) {
+                        uint16_t tx_seq = LR20xx_tx_buf[0] | (LR20xx_tx_buf[1] << 8);
+                        static uint8_t init_tx_dbg = 0;
+                        if (init_tx_dbg < 10) {
+                            printf("INIT_TX: seq=%u idx=%u\r\n", tx_seq, tx_buf_idx);
+                            init_tx_dbg++;
+                        }
+                    }
+                    if (streaming_cfg.packets_per_frame > 1) {
+                        static uint8_t tx_start_debug = 0;
+                        if (tx_start_debug < 3) {
+                            printf("tx_start: idx=%u size=%u\r\n", tx_buf_idx, tx_size);
+                            tx_start_debug++;
+                        }
+                    }
+                    /* Debug: verify sequence numbers in buffer for multi-frame mode */
+                    if (test_mode && streaming_cfg.frames_per_packet > 1) {
+                        static uint8_t mf_debug_cnt = 0;
+                        if (mf_debug_cnt < 5) {
+                            uint16_t f, seq;
+                            printf("TX_BUF:");
+                            for (f = 0; f < streaming_cfg.frames_per_packet; f++) {
+                                seq = lorahal.tx_buf[f * _bytes_per_frame] |
+                                      (lorahal.tx_buf[f * _bytes_per_frame + 1] << 8);
+                                printf(" [%u]=%u", f * _bytes_per_frame, seq);
+                            }
+                            printf("\r\n");
+                            mf_debug_cnt++;
+                        }
+                    }
                     tx_encoded(tx_size);
                     stream_state = STREAM_TX_ACTIVE;
                 }
@@ -1547,6 +1846,10 @@ skip_encode:
                 /* Stop buffering next packet - we're done transmitting */
                 stream_state = STREAM_IDLE;
 #endif
+#ifdef USE_FREERTOS
+                /* Signal encoder task that TX session is ending */
+                freertos_tx_session_end();
+#endif
                 if (txing) {
                     rx_start_at_tx_done = 1;
                 } else if (tx_buf_idx > 0) {
@@ -1562,9 +1865,22 @@ skip_encode:
         lorahal.service();
 
 #ifdef ENABLE_LR20XX
-        /* Multi-packet mode: service audio output to prevent stale buffers.
-         * This handles callbacks that fire while we're waiting for packets. */
+        /* Debug: periodic heartbeat in multi-packet mode */
         if (streaming_cfg.packets_per_frame > 1) {
+            static uint32_t last_heartbeat = 0;
+            static uint8_t heartbeat_count = 0;
+            if (uwTick - last_heartbeat >= 500 && heartbeat_count < 10) {
+                printf("HB: st=%d txing=%d buf=%u rec=%d\r\n",
+                       stream_state, txing, tx_buf_idx, audio_rec_buffer_state);
+                last_heartbeat = uwTick;
+                heartbeat_count++;
+            }
+        }
+
+        /* Service audio output for:
+         * - Multi-packet mode: handle callbacks while waiting for packets
+         * - Sine playback mode: standalone sine wave output for testing */
+        if (streaming_cfg.packets_per_frame > 1 || sine_playback_mode) {
             service_audio_output();
 
             /* Clear overrun debug flag - count is reported at TX end.
@@ -1590,7 +1906,10 @@ skip_encode:
                 rx_fifo_read_idx = 0;
                 rx_decode_idx = 0;
                 __enable_irq();
-                printf("\e[31mRX FIFO overflow (reset)\e[0m\r\n");
+                static uint32_t overflow_print_cnt = 0;
+                if (++overflow_print_cnt <= 5) {
+                    printf("\e[31mRX FIFO overflow (reset)\e[0m\r\n");
+                }
             }
         }
         /* Check for deferred FIFO residual warning */
@@ -1655,11 +1974,21 @@ skip_encode:
             } else {
                 /* Normal single-packet mode */
                 uint16_t saved_fifo_idx = rx_fifo_read_idx;
+                uint16_t pre_decode_idx = rx_decode_idx;
                 if (rx_fifo_read_idx > pkt_size) {
                     /* Limit decode to current packet only */
                     rx_fifo_read_idx = pkt_size;
                 }
                 streaming_rx_decode();
+                uint16_t frames_decoded = (rx_decode_idx - pre_decode_idx) / _bytes_per_frame;
+                /* Debug: show decode stats for first few packets */
+                static uint8_t debug_pkt_count = 0;
+                if (test_mode && debug_pkt_count < 5) {
+                    printf("DBG pkt: size=%d fifo=%u->%u dec=%u->%u (%u frames)\r\n",
+                           pkt_size, saved_fifo_idx, rx_fifo_read_idx,
+                           pre_decode_idx, rx_decode_idx, frames_decoded);
+                    debug_pkt_count++;
+                }
                 rx_fifo_read_idx = saved_fifo_idx;  /* Restore for overflow calculation */
 
                 /* Set end-of-packet timeout */
@@ -1668,8 +1997,12 @@ skip_encode:
                         printf("short_pkt %d\r\n", rx_size);
                     end_rx_tone();
                 } else if (currently_decoding) {
-                    if (!test_mode)
-                        printf("pkt_done pkt=%u fifo=%u dec=%u\r\n", pkt_size, saved_fifo_idx, rx_decode_idx);
+                    if (!test_mode) {
+                        static uint32_t pkt_done_cnt = 0;
+                        if (++pkt_done_cnt <= 10 || (pkt_done_cnt % 25) == 0) {
+                            printf("pkt_done pkt=%u fifo=%u dec=%u\r\n", pkt_size, saved_fifo_idx, rx_decode_idx);
+                        }
+                    }
                     terminate_spkr_at_tick = uwTick + inter_pkt_timeout;
                 }
 
