@@ -350,7 +350,20 @@ int main(void)
       BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() - 95, (uint8_t *)"ERROR", CENTER_MODE);
       BSP_LCD_DisplayStringAt(0, BSP_LCD_GetYSize() - 80, (uint8_t *)"Touchscreen cannot be initialized", CENTER_MODE);
     }
-    else
+
+    /* Initialize audio output early so DMA callbacks are active during menu.
+     * This prevents blocking when printf uses the ring buffer UART.
+     * Will be re-initialized with proper buffer sizes in AudioLoopback_demo(). */
+    {
+        extern uint16_t *audio_buffer_out;
+        audio_buffer_out = (uint16_t*)AUDIO_REC_START_ADDR;
+        memset((void*)audio_buffer_out, 0, 2560 * 2);  /* silence, double-buffered */
+        BSP_AUDIO_OUT_Init(OUTPUT_DEVICE_HEADPHONE, 70, I2S_AUDIOFREQ_16K);
+        BSP_AUDIO_OUT_SetAudioFrameSlot(CODEC_AUDIOFRAME_SLOT_02);
+        BSP_AUDIO_OUT_Play(audio_buffer_out, 2560 * 2);
+    }
+
+    if (status == TS_OK)
     {
 #ifdef MIC_DISABLE
     #if (MIC_DISABLE==MIC_LEFT)

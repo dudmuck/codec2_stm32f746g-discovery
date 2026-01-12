@@ -11,7 +11,7 @@
 **
 **  Environment : System Workbench for MCU
 **
-**  Distribution: The file is distributed “as is,” without any warranty
+**  Distribution: The file is distributed ï¿½as is,ï¿½ without any warranty
 **                of any kind.
 **
 **  (c)Copyright System Workbench for MCU.
@@ -91,28 +91,87 @@ return len;
 }
 
 #include "stm32f7xx_hal.h"
-//volatile uint32_t Acnt;
 UART_HandleTypeDef UartHandle;
-//volatile uint8_t uartTXing;
-#define TX_TIMEOUT              100
+
+/* Non-blocking UART TX with ring buffer using interrupt mode.
+ * Data is copied to ring buffer, interrupt drains in background.
+ * Only blocks if buffer fills up (back-pressure).
+ * Uses interrupt mode instead of DMA to avoid DMA2_Stream7 conflict with audio.
+ */
+#define UART_TX_BUF_SIZE    2048  /* Must be power of 2 */
+#define UART_TX_BUF_MASK    (UART_TX_BUF_SIZE - 1)
+
+static uint8_t uart_tx_buf[UART_TX_BUF_SIZE];
+static volatile uint16_t tx_head = 0;  /* Write position */
+static volatile uint16_t tx_tail = 0;  /* TX read position */
+static volatile uint8_t tx_busy = 0;
+
+/* Start interrupt transfer if data available and TX not busy */
+static void uart_tx_start(void)
+{
+    if (tx_busy || tx_head == tx_tail)
+        return;
+
+    uint16_t head = tx_head;
+    uint16_t tail = tx_tail;
+    uint16_t len;
+
+    if (head > tail) {
+        /* Contiguous block from tail to head */
+        len = head - tail;
+    } else {
+        /* Wrap-around: send from tail to end of buffer */
+        len = UART_TX_BUF_SIZE - tail;
+    }
+
+    tx_busy = 1;
+    if (HAL_UART_Transmit_IT(&UartHandle, &uart_tx_buf[tail], len) != HAL_OK) {
+        /* TX failed (HAL_BUSY/HAL_ERROR) - clear busy flag to avoid deadlock */
+        tx_busy = 0;
+    }
+}
+
+/* Called from HAL when interrupt transfer completes */
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart != &UartHandle)
+        return;
+
+    /* Advance tail by amount just transmitted */
+    uint16_t transmitted = huart->TxXferSize;
+    tx_tail = (tx_tail + transmitted) & UART_TX_BUF_MASK;
+    tx_busy = 0;
+
+    /* Start next transfer if more data pending */
+    uart_tx_start();
+}
+
 int _write(int file, char *ptr, int len)
 {
-    if (HAL_UART_Transmit(&UartHandle, (uint8_t*)ptr, len, TX_TIMEOUT) == HAL_OK)
-        return len;
-    else
-        return -1;
+    int written = 0;
 
-#if 0
-    while (uartTXing)
-        asm("nop");
+    while (written < len) {
+        uint16_t head = tx_head;
+        uint16_t next_head = (head + 1) & UART_TX_BUF_MASK;
 
-    uartTXing = 1;
-    if (HAL_UART_Transmit_DMA(&UartHandle, (uint8_t*)ptr, len) == HAL_OK) {
-        Acnt++;
-	    return len;
-    } else
-        return -1;
-#endif /* if 0 */
+        /* If buffer full, wait for TX to drain some */
+        while (next_head == tx_tail) {
+            /* Buffer full - ensure TX is running */
+            if (!tx_busy)
+                uart_tx_start();
+            /* Brief wait then check again */
+            for (volatile int i = 0; i < 100; i++) asm("nop");
+        }
+
+        uart_tx_buf[head] = ptr[written++];
+        tx_head = next_head;
+    }
+
+    /* Kick off TX if not already running */
+    if (!tx_busy)
+        uart_tx_start();
+
+    return len;
 }
 
 caddr_t _sbrk(int incr)

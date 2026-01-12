@@ -478,6 +478,12 @@ void test_mode_decode(const uint8_t *in)
 }
 
 #define N_HISTORY       12
+
+#ifdef TIMING_DEBUG
+static uint32_t enc_max = 0;
+static uint32_t dec_max = 0;
+#endif
+
 void decimated_encode(const short *in, uint8_t *out)
 {
     short to_encoder[320];
@@ -502,9 +508,23 @@ void decimated_encode(const short *in, uint8_t *out)
         to_encoder[x] = sum / navgs_;
     }
 
+#ifdef TIMING_DEBUG
+    uint32_t t0 = uwTick;
+#endif
     codec2_encode(c2, out, to_encoder);
+#ifdef TIMING_DEBUG
+    uint32_t enc_time = uwTick - t0;
+    if (enc_time > enc_max) enc_max = enc_time;
+#endif
     if (++frameCnt == frames_per_sec) {
+#ifdef TIMING_DEBUG
+        printf("%lums for %u frames, enc_max=%lu dec_max=%lu\r\n",
+               uwTick - tickAtFrameSecond, frames_per_sec, enc_max, dec_max);
+        enc_max = 0;
+        dec_max = 0;
+#else
         printf("%lums for %u frames\r\n", uwTick - tickAtFrameSecond, frames_per_sec);
+#endif
         tickAtFrameSecond = uwTick;
         frameCnt = 0;
     }
@@ -687,7 +707,14 @@ void put_spkr()
     fdb ^= 1;
 
     if (++frameCnt == frames_per_sec) {
+#ifdef TIMING_DEBUG
+        printf("%lums for %u frames, enc_max=%lu dec_max=%lu\r\n",
+               uwTick - tickAtFrameSecond, frames_per_sec, enc_max, dec_max);
+        enc_max = 0;
+        dec_max = 0;
+#else
         printf("%lums for %u frames\r\n", uwTick - tickAtFrameSecond, frames_per_sec);
+#endif
         tickAtFrameSecond = uwTick;
         frameCnt = 0;
     }
@@ -730,6 +757,9 @@ void parse_rx()
         for (n = 0; n < rx_size; n += _bytes_per_frame) {
             unsigned i;
             uint8_t scratch[7];
+#ifdef TIMING_DEBUG
+            uint32_t t0, dec_time;
+#endif
             printf("%u,%u) ", n, frame_length_bytes);
             for (i = 0; i < _bytes_per_frame; i++)
                 printf("%02x ", lorahal.rx_buf[n+i]);
@@ -743,7 +773,14 @@ void parse_rx()
 
             decBuf = fdb ? from_decoderB : from_decoderA;
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
+#ifdef TIMING_DEBUG
+            t0 = uwTick;
+#endif
             codec2_decode(c2, decBuf, scratch);
+#ifdef TIMING_DEBUG
+            dec_time = uwTick - t0;
+            if (dec_time > dec_max) dec_max = dec_time;
+#endif
             put_spkr();
 
             for (i = 0; i < frame_length_bytes; i++) {
@@ -758,7 +795,14 @@ void parse_rx()
 
             decBuf = fdb ? from_decoderB : from_decoderA;
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
+#ifdef TIMING_DEBUG
+            t0 = uwTick;
+#endif
             codec2_decode(c2, decBuf, scratch);
+#ifdef TIMING_DEBUG
+            dec_time = uwTick - t0;
+            if (dec_time > dec_max) dec_max = dec_time;
+#endif
             put_spkr();
         }
 
@@ -767,7 +811,14 @@ void parse_rx()
             const uint8_t *encoded = &lorahal.rx_buf[n];
             decBuf = fdb ? from_decoderB : from_decoderA;
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
+#ifdef TIMING_DEBUG
+            uint32_t t0 = uwTick;
+#endif
             codec2_decode(c2, decBuf, encoded);
+#ifdef TIMING_DEBUG
+            uint32_t dec_time = uwTick - t0;
+            if (dec_time > dec_max) dec_max = dec_time;
+#endif
 
             //printf("%u,%uplayStateWait\r\n", fdb, n);
             put_spkr();
@@ -819,13 +870,23 @@ void streaming_rx_decode(void)
             /* Dual-frame modes - decode 2 frames from _bytes_per_frame */
             unsigned i;
             uint8_t scratch[7];
+#ifdef TIMING_DEBUG
+            uint32_t t0, dec_time;
+#endif
             for (i = 0; i < frame_length_bytes; i++)
                 scratch[i] = lorahal.rx_buf[rx_decode_idx + i];
             scratch[i] = lorahal.rx_buf[rx_decode_idx + i] & 0xf0;
 
             decBuf = fdb ? from_decoderB : from_decoderA;
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
+#ifdef TIMING_DEBUG
+            t0 = uwTick;
+#endif
             codec2_decode(c2, decBuf, scratch);
+#ifdef TIMING_DEBUG
+            dec_time = uwTick - t0;
+            if (dec_time > dec_max) dec_max = dec_time;
+#endif
             put_spkr();
 
             for (i = 0; i < frame_length_bytes; i++) {
@@ -837,14 +898,28 @@ void streaming_rx_decode(void)
 
             decBuf = fdb ? from_decoderB : from_decoderA;
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
+#ifdef TIMING_DEBUG
+            t0 = uwTick;
+#endif
             codec2_decode(c2, decBuf, scratch);
+#ifdef TIMING_DEBUG
+            dec_time = uwTick - t0;
+            if (dec_time > dec_max) dec_max = dec_time;
+#endif
             put_spkr();
         } else {
             /* Normal modes - decode 1 frame per _bytes_per_frame */
             const uint8_t *encoded = &lorahal.rx_buf[rx_decode_idx];
             decBuf = fdb ? from_decoderB : from_decoderA;
             prevDecBuf = fdb ? from_decoderA : from_decoderB;
+#ifdef TIMING_DEBUG
+            uint32_t t0 = uwTick;
+#endif
             codec2_decode(c2, decBuf, encoded);
+#ifdef TIMING_DEBUG
+            uint32_t dec_time = uwTick - t0;
+            if (dec_time > dec_max) dec_max = dec_time;
+#endif
             put_spkr();
         }
 

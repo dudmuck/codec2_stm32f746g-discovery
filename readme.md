@@ -1,3 +1,7 @@
+> [!NOTE]
+> for higher quality sound, there is concurrent opus with radio operation at this branch https://github.com/dudmuck/codec2_stm32f746g-discovery/tree/freertos-opus
+> 
+
 ## contains 3 projects
 
 * **passthru**: for checking [stm32f746g-discovery](https://www.st.com/en/evaluation-tools/32f746gdiscovery.html) hardware: LCD-touchscreen, microphone and speaker interface. Requires only one discovery board. Useful for anybody wishing to use this board for audio purpose.
@@ -21,6 +25,10 @@ $ cmake ..   (for LR2021 add -DRADIO=LR2021)
 $ make
 ```
 Ensure gcc-arm is in your path prior to running cmake, if not delete your build directory and re-run cmake with gcc-arm in path.
+
+#### Build Options
+- `-DRADIO=LR2021` - Build for LR2021 radio instead of SX12xx
+- `-DTIMING_DEBUG=ON` - Enable codec2 encode/decode timing measurement. Prints `enc_max` and `dec_max` (in ms) each second during voice TX/RX.
 
 ### Flashing stm32f7-discovery
 ~~https://github.com/texane/stlink
@@ -178,5 +186,3 @@ Press 'T' via serial to enable test mode, which sends sequence numbers instead o
 - '?': Show stats (frames received, dropped, duplicates, gaps)
 
 The test script `test_radio_link.sh` automates testing across all codec2 rates.
-
-

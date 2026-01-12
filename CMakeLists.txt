@@ -89,6 +89,11 @@ if(VERIFY_OPT)
 	add_definitions(-DDUMP)
 endif()
 
+option(TIMING_DEBUG "Enable codec2 encode/decode timing measurement" OFF)
+if(TIMING_DEBUG)
+	add_definitions(-DTIMING_DEBUG)
+endif()
+
 # Set default build type
 if(NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE "Debug")
