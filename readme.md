@@ -80,6 +80,8 @@ variables in main.c:
 
 ### Default LoRa settings (LR20xx)
 
+With FreeRTOS concurrent encoding, the encoder runs in parallel with radio transmission, allowing higher SF values than sequential operation.
+
 | Opus mode | BW (kHz) | auto SF | payload (bytes) | frames/pkt | production (ms) | TOA (ms) | margin (ms) |
 |-----------|----------|---------|-----------------|------------|-----------------|----------|-------------|
 | 6K  | 500  | 9 | 240 | 8 | 320 | 298 | 22 |
@@ -88,18 +90,18 @@ variables in main.c:
 | 16K | 500  | 7 | 240 | 3 | 120 | 94  | 26 |
 | 24K | 500  | 6 | 240 | 2 | 80  | 55  | 25 |
 | 32K | 500  | 5 | 160 | 1 | 40  | 22  | 18 |
-| 48K | 812  | 5 | 240 | 1 | 40  | 20  | 20 |
-| 64K | 1000 | 5 | 240×2 | 1 | 60  | 34  | ~5* |
+| 48K | 812  | 6 | 240 | 1 | 40  | 34  | 6 |
+| 64K | 1000 | 6 | 240×2 | 1 | 62  | 56  | 6 |
 | 96K | 1000 | 5 | 240×3 | 1 | 60  | 51  | ~0* |
 
 **Notes:**
-- **Auto SF** = SF automatically adjusted to ensure minimum 10ms timing margin
+- **Auto SF** = SF automatically adjusted based on concurrent vs sequential mode
 - **BW** = Bandwidth. Higher rates use wider bandwidth for faster transmission.
 - **TOA** = Time On Air (packet transmission duration at auto SF)
 - **Production** = frames/pkt × frame period. Streaming requires TOA ≤ production.
-- **Margin** = production - TOA. Minimum 10ms required for reliable streaming.
+- **Margin** = production - TOA. Minimum 5ms required with FreeRTOS concurrent encoding.
 - 64K and 96K use **multi-packet mode**: each Opus frame spans 2-3 LoRa packets (see below).
-- *64K/96K margins are reduced because encode and TX are serialized (not pipelined). See "64K Mode Timing Analysis" below.
+- *96K margin is very tight; may require complexity reduction.
 
 ### General LoRa considerations
 
@@ -142,19 +144,21 @@ The LoRa bandwidth can be adjusted at runtime using serial commands. SF is autom
 
 ### LR20xx Streaming Configuration at Different Bandwidths
 
-The firmware auto-adjusts SF to ensure streaming is feasible with sufficient timing margin (minimum 10ms). When bandwidth increases, SF is increased to maximize range. When bandwidth decreases, SF is reduced to maintain streaming feasibility.
+With FreeRTOS concurrent encoding, the firmware auto-adjusts SF to ensure streaming is feasible with sufficient timing margin (minimum 5ms). Concurrent mode allows higher SF than sequential because encoding overlaps with TX.
 
-| Opus mode | Default BW | Auto SF | Alternative SF at other BW |
-|-----------|------------|---------|----------------------------|
-| 6K  | 500kHz  | SF9 | SF10@812, SF11@1000 |
-| 8K  | 500kHz  | SF8 | SF9@812, SF10@1000  |
-| 12K | 500kHz  | SF7 | SF8@812, SF9@1000   |
-| 16K | 500kHz  | SF7 | SF8@812, SF8@1000   |
-| 24K | 500kHz  | SF6 | SF7@812, SF7@1000   |
-| 32K | 500kHz  | SF5 | SF6@812, SF6@1000   |
-| 48K | 812kHz  | SF5 | SF6@1000            |
-| 64K | 1000kHz | SF5 | multi-packet mode   |
-| 96K | 1000kHz | SF5 | multi-packet mode   |
+| Opus mode | Default BW | Auto SF (concurrent) | Max SF (sequential) |
+|-----------|------------|----------------------|---------------------|
+| 6K  | 500kHz  | SF9 | SF7 |
+| 8K  | 500kHz  | SF8 | SF6 |
+| 12K | 500kHz  | SF7 | SF6 |
+| 16K | 500kHz  | SF7 | SF5 |
+| 24K | 500kHz  | SF6 | SF5 |
+| 32K | 500kHz  | SF6* | SF5 |
+| 48K | 812kHz  | SF6 | SF5 |
+| 64K | 1000kHz | SF6 | SF5 |
+| 96K | 1000kHz | SF5 | - |
+
+*32K at SF6 has only 2ms margin; SF5 (18ms margin) is more reliable.
 
 **Link Budget Trade-offs:**
 - Higher BW + higher SF = lower latency, similar range
@@ -201,7 +205,7 @@ For high-fidelity 64K and 96K modes, each Opus frame (480 or 720 bytes) exceeds 
 
 | Mode | Opus frame | Packets per frame | Packet size | Total TX time |
 |------|------------|-------------------|-------------|---------------|
-| 64K  | 480 bytes  | 2                 | 240 bytes   | 34 ms (SF5)   |
+| 64K  | 480 bytes  | 2                 | 240 bytes   | 56 ms (SF6)   |
 | 96K  | 720 bytes  | 3                 | 240 bytes   | 51 ms (SF5)   |
 
 #### How Multi-Packet TX Works
@@ -229,31 +233,30 @@ Key implementation details:
 
 #### Timing Constraints
 
-At SF5 with 1000kHz bandwidth:
-- Packet time-on-air: 17 ms
-- Two packets back-to-back: 34 ms total TX time
-- Opus frame production: 60 ms
-- **Margin: 26 ms** (sufficient for reliable streaming)
+At SF6 with 1000kHz bandwidth (concurrent encoding):
+- Packet time-on-air: 28 ms
+- Two packets back-to-back: 56 ms total TX time
+- Opus frame production: 62 ms
+- **Margin: 6 ms** (sufficient with FreeRTOS concurrent encoding)
 
-The auto-SF adjustment ensures at least 10ms margin. If margin is insufficient at the current SF, the firmware automatically reduces SF to increase data rate.
+With FreeRTOS concurrent encoding, the encoder runs in a separate task overlapping with TX, allowing SF6 (vs SF5 in sequential mode). The auto-SF adjustment ensures at least 5ms margin in concurrent mode.
 
 #### 64K Mode Timing Analysis
 
-The 64K mode operates with tight timing margins due to the serialized encode + TX cycle in multi-packet mode. Unlike single-packet modes where encoding can be pipelined with transmission, multi-packet mode must complete both packets before the next encode cycle.
+With FreeRTOS concurrent encoding, the encoder task runs in parallel with radio transmission, providing better timing margins than sequential operation.
 
-**Actual timing breakdown (measured via logic analyzer):**
+**Measured timing with concurrent encoding (SF6 @ 1000kHz):**
 
 | Component | Time |
 |-----------|------|
-| Opus encode (silence) | ~19 ms |
-| Opus encode (audio content) | ~25-31 ms |
-| Packet 1 time-on-air | 17.4 ms |
-| Inter-packet SPI overhead | ~1 ms |
-| Packet 2 time-on-air | 17.4 ms |
-| **Total (silence)** | **~55 ms** |
-| **Total (audio)** | **~61-67 ms** |
+| Opus encode (max) | ~30 ms |
+| Packet 1 time-on-air | 28 ms |
+| Packet 2 time-on-air | 28 ms |
+| **Total TX time** | **56 ms** |
+| **Frame period** | **62 ms** |
+| **Margin** | **6 ms** |
 
-With a 60ms frame period, silence transmission has ~5ms margin, but audio content can exceed the frame period by 1-7ms. This causes `TX_SLOW` warnings but does not break streaming - the system recovers on subsequent silent frames.
+Because encoding runs concurrently with transmission, the constraint is simply `TOA ≤ production_time` (56ms ≤ 62ms). This allows SF6 operation which was not feasible in sequential mode.
 
 **Opus complexity tuning:**
 

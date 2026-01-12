@@ -4,16 +4,35 @@
 # Tests that encoded frames are correctly sent/received over LoRa link
 #
 # Usage: ./test_radio_link.sh [duration_seconds] [rate]
+#        ./test_radio_link.sh [rate]
 #   duration_seconds: test duration per rate (default: 10)
 #   rate: specific rate to test (6K,8K,12K,16K,24K,32K,48K,64K)
 #         if omitted, tests all rates
 #
+# Examples:
+#   ./test_radio_link.sh           # test all rates, 10s each
+#   ./test_radio_link.sh 32K       # test 32K only, 10s
+#   ./test_radio_link.sh 20        # test all rates, 20s each
+#   ./test_radio_link.sh 20 32K    # test 32K only, 20s
 
 TX_DEV="/dev/ttyACM0"
 RX_DEV="/dev/ttyACM1"
 BAUD=115200
-TEST_DURATION=${1:-10}  # Default 10 seconds per rate
-SINGLE_RATE=${2:-""}    # Optional: test only this rate
+
+# Parse arguments - detect if first arg is rate or duration
+if [[ "$1" =~ ^[0-9]+[kK]$ ]]; then
+    # First arg looks like a rate (e.g., 32K, 64k)
+    TEST_DURATION=10
+    SINGLE_RATE="$1"
+elif [[ -n "$1" ]]; then
+    # First arg is duration
+    TEST_DURATION="$1"
+    SINGLE_RATE="${2:-}"
+else
+    # No args
+    TEST_DURATION=10
+    SINGLE_RATE=""
+fi
 LOG_DIR="test_logs"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
@@ -248,6 +267,8 @@ echo "Test duration: ${TEST_DURATION}s per rate"
 
 # Validate single rate if specified
 if [ -n "$SINGLE_RATE" ]; then
+    # Convert to uppercase (accept both 32k and 32K)
+    SINGLE_RATE=${SINGLE_RATE^^}
     if [ -z "${RATE_IDX[$SINGLE_RATE]}" ]; then
         echo -e "${RED}Error: Invalid rate '$SINGLE_RATE'${NC}"
         echo "Valid rates: 6K, 8K, 12K, 16K, 24K, 32K, 48K, 64K"
