@@ -9,6 +9,9 @@
 #include "lr20xx_radio_fifo.h"
 #include "lr20xx_hal.h"  /* for lr20xx_stat_t */
 #include "main.h" // for delay_ticks()
+#ifdef USE_FREERTOS
+#include "freertos_tasks.h"
+#endif
 
 /* Modem-specific includes */
 #ifdef MODEM_FSK
@@ -143,6 +146,15 @@ void Radio_dio8_top_half()
     /* Set flag immediately for fast polling response */
     dio8_irq_pending = 1;
 
+#ifdef USE_FREERTOS
+    /* Only signal radio service task during RX mode.
+     * During TX, the main task handles FIFO_TX and TX_DONE - no need to preempt.
+     * The radio service task is specifically for RX FIFO reads during Opus decode. */
+    if (LR20xx_chipMode != LR20XX_SYSTEM_CHIP_MODE_TX) {
+        freertos_radio_irq_FromISR();
+    }
+#endif
+
     if (RadioEvents->DioPin_top_half) {
         RadioEvents->DioPin_top_half();
 	}
@@ -152,7 +164,7 @@ void Radio_dio8_top_half()
         /* TxDone handling requires low latency, but this could be other interrupt during TX such as fifo-irq */
         if (RadioEvents->TxDone_topHalf) {
             RadioEvents->TxDone_topHalf();
-        } 
+        }
 	}
 }
 
@@ -638,15 +650,7 @@ uint16_t Send_lr20xx_fifo_continue(void)
 	if (to_send == 0)
 		return 0;
 
-	/* Debug: check byte 288 when it's part of this FIFO write (64K multi-packet mode) */
-	if (tx_fifo_idx <= 288 && (tx_fifo_idx + to_send) > 288) {
-		static uint8_t tx288_fifo_debug_cnt = 0;
-		if (tx288_fifo_debug_cnt < 5) {
-			printf("TX FIFO byte[288]=%02x (write %u-%u)\r\n",
-			       LR20xx_tx_buf[288], tx_fifo_idx, tx_fifo_idx + to_send - 1);
-			tx288_fifo_debug_cnt++;
-		}
-	}
+	/* Debug byte[288] removed - printf in ISR causes timing issues */
 
 	if (lr20xx_radio_fifo_write_tx(NULL, &LR20xx_tx_buf[tx_fifo_idx], to_send) != LR20XX_STATUS_OK)
 		return 0;

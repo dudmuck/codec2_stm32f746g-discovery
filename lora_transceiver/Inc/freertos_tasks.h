@@ -20,18 +20,21 @@
 #include "stream_buffer.h"
 
 /* Task priorities (higher number = higher priority)
- * Main must be highest to immediately service TX_DONE interrupts.
- * Main spends most time blocked, so encoder runs when main is waiting. */
-#define MAIN_TASK_PRIORITY          (configMAX_PRIORITIES - 1)  /* Highest: instant TX_DONE response */
-#define ENCODER_TASK_PRIORITY       (configMAX_PRIORITIES - 2)  /* Below main: runs when main blocks */
-#define TX_TASK_PRIORITY            (configMAX_PRIORITIES - 3)  /* Below encoder */
-#define AUDIO_SERVICE_TASK_PRIORITY (configMAX_PRIORITIES - 4)  /* Background audio out servicing */
+ * Radio service is highest to preempt decode and prevent FIFO overflow.
+ * Main handles TX_DONE and general processing.
+ * Encoder runs when main blocks. */
+#define RADIO_SERVICE_TASK_PRIORITY (configMAX_PRIORITIES - 1)  /* Highest: preempt decode for FIFO reads */
+#define MAIN_TASK_PRIORITY          (configMAX_PRIORITIES - 2)  /* Below radio: TX_DONE response */
+#define ENCODER_TASK_PRIORITY       (configMAX_PRIORITIES - 3)  /* Below main: runs when main blocks */
+#define TX_TASK_PRIORITY            (configMAX_PRIORITIES - 4)  /* Below encoder */
+#define AUDIO_SERVICE_TASK_PRIORITY (configMAX_PRIORITIES - 5)  /* Background audio out servicing */
 
 /* Task stack sizes (in words, not bytes) */
 #define MAIN_TASK_STACK_SIZE        (8192)  /* Main task needs large stack for AudioLoopback_demo */
 #define ENCODER_TASK_STACK_SIZE     (8192)  /* Opus encoder needs large stack (silk DSP functions) */
 #define TX_TASK_STACK_SIZE          (1024)
 #define AUDIO_SERVICE_STACK_SIZE    (512)
+#define RADIO_SERVICE_STACK_SIZE    (1024)  /* Radio service needs moderate stack for SPI ops */
 
 /* Stream buffer for encoded data (bytes) */
 #define TX_STREAM_BUFFER_SIZE       (1024)
@@ -41,10 +44,12 @@
 extern SemaphoreHandle_t xAudioHalfSemaphore;
 extern SemaphoreHandle_t xAudioFullSemaphore;
 extern SemaphoreHandle_t xTxDoneSemaphore;
+extern SemaphoreHandle_t xRadioServiceSemaphore;  /* Radio DIO8 IRQ signaling */
 
 /* Task handles */
 extern TaskHandle_t xEncoderTaskHandle;
 extern TaskHandle_t xTxTaskHandle;
+extern TaskHandle_t xRadioServiceTaskHandle;
 
 /* Stream buffer for encoded data */
 extern StreamBufferHandle_t xTxStreamBuffer;
@@ -59,6 +64,7 @@ void freertos_start(void);
 void freertos_audio_half_ready_FromISR(void);
 void freertos_audio_full_ready_FromISR(void);
 void freertos_tx_done_FromISR(void);
+void freertos_radio_irq_FromISR(void);  /* Signal radio service task from DIO8 IRQ */
 
 /* Check if FreeRTOS tasks are active */
 uint8_t freertos_tasks_active(void);

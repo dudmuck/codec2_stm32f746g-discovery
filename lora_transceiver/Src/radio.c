@@ -11,6 +11,9 @@
 #include "lr20xx_radio_fifo.h"
 #endif /* !ENABLE_LR20XX */
 #include "pinDefs.h"
+#ifdef USE_FREERTOS
+#include "freertos_tasks.h"
+#endif
 
 lorahal_t lorahal;
 
@@ -27,7 +30,15 @@ void txDoneCB()
     txing = 0;
     appHal.lcd_printOpMode(false);
     lcd_print_tx_duration((int)(tickAtIrq - txStartAt), (unsigned)cycleDur);
-    if (rx_start_at_tx_done) { 
+#ifdef USE_FREERTOS
+    /* Signal TX task that transmission is complete.
+     * This is called from task context (lorahal.service() in main loop),
+     * so use regular semaphore API, not FromISR variant. */
+    if (xTxDoneSemaphore != NULL) {
+        xSemaphoreGive(xTxDoneSemaphore);
+    }
+#endif
+    if (rx_start_at_tx_done) {
         lora_rx_begin();
         rx_start_at_tx_done = 0;
     }
@@ -59,6 +70,8 @@ void fifoTxCB(lr20xx_radio_fifo_flag_t tx_fifo_flags)
 }
 
 static uint32_t fifo_rx_irq_count;
+static uint32_t fifo_rx_total_bytes;  /* Debug: total bytes read from RX FIFO */
+static uint16_t fifo_rx_max_idx;      /* Debug: max rx_fifo_read_idx reached */
 
 void fifoRxCB(lr20xx_radio_fifo_flag_t rx_fifo_flags)
 {
@@ -68,32 +81,45 @@ void fifoRxCB(lr20xx_radio_fifo_flag_t rx_fifo_flags)
     }
     if (rx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH) {
         fifo_rx_irq_count++;
-        /* RX FIFO has data available - read all available data.
-         * For multi-packet mode (64K, 96K), one Opus frame spans multiple packets,
-         * so we can't wait for complete frames - just accumulate bytes.
-         * Limit reads to prevent garbage decode if noise triggers FIFO after TX ends:
-         * - Single-packet mode: limit to lora_payload_length
-         * - Multi-packet mode: allow full buffer to enable frame buffering */
+        /* RX FIFO threshold reached - read available data in ONE operation.
+         * At 95 kbps, looping to drain causes data to arrive faster than we read,
+         * leading to overflow. Single read per callback is more efficient. */
         uint16_t fifo_level;
-        uint16_t max_read = (streaming_cfg.packets_per_frame > 1) ? LR20XX_BUF_SIZE : lora_payload_length;
-        if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) == LR20XX_STATUS_OK) {
-            /* Don't read past max_read boundary */
-            if (rx_fifo_read_idx >= max_read) {
-                return;  /* Already have enough data, don't read noise */
-            }
-            uint16_t space_left = max_read - rx_fifo_read_idx;
-            if (fifo_level > space_left) {
-                fifo_level = space_left;  /* Limit to available space */
-            }
-            if (fifo_level > 0 && (rx_fifo_read_idx + fifo_level) <= LR20XX_BUF_SIZE) {
-                lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], fifo_level);
-                rx_fifo_read_idx += fifo_level;
+        uint16_t max_read = (streaming_cfg.packets_per_frame > 1) ? LR20XX_BUF_SIZE : (lora_payload_length * 2);
+
+        /* Don't read past max_read boundary */
+        if (rx_fifo_read_idx >= max_read) {
+            return;  /* Already have enough data */
+        }
+
+        if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) != LR20XX_STATUS_OK) {
+            return;  /* FIFO query failed */
+        }
+
+        if (fifo_level == 0) {
+            return;  /* FIFO empty */
+        }
+
+        uint16_t space_left = max_read - rx_fifo_read_idx;
+        if (fifo_level > space_left) {
+            fifo_level = space_left;  /* Limit to available space */
+        }
+
+        if (fifo_level > 0 && (rx_fifo_read_idx + fifo_level) <= LR20XX_BUF_SIZE) {
+            lr20xx_radio_fifo_read_rx(NULL, &LR20xx_rx_buf[rx_fifo_read_idx], fifo_level);
+            rx_fifo_read_idx += fifo_level;
+            fifo_rx_total_bytes += fifo_level;
+            if (rx_fifo_read_idx > fifo_rx_max_idx) {
+                fifo_rx_max_idx = rx_fifo_read_idx;
             }
         }
     }
 }
 
 uint32_t get_fifo_rx_irq_count(void) { return fifo_rx_irq_count; }
+uint32_t get_fifo_rx_total_bytes(void) { return fifo_rx_total_bytes; }
+uint16_t get_fifo_rx_max_idx(void) { return fifo_rx_max_idx; }
+void reset_fifo_rx_debug(void) { fifo_rx_total_bytes = 0; fifo_rx_max_idx = 0; }
 #endif /* ENABLE_LR20XX */
 
 const RadioEvents_t rev = {
@@ -228,13 +254,40 @@ void start_radio()
     lorahal.init(&rev);
 
     lorahal.standby();
+
+#ifdef MODEM_FSK
+    /* Calculate FSK bitrate based on Opus frame size and rate.
+     * FSK_bitrate = (payload_bits + overhead_bits) * frames_per_sec * margin
+     * Overhead: ~96 bits (40 preamble + 32 sync + 8 length + 16 CRC)
+     * Add 50% margin for timing tolerance (multi-frame modes need more headroom) */
+    {
+        extern uint16_t _bytes_per_frame;
+        extern uint8_t frames_per_sec;
+        uint32_t payload_bits = _bytes_per_frame * 8;
+        uint32_t overhead_bits = 96;
+        uint32_t bits_per_frame = payload_bits + overhead_bits;
+        /* bitrate_bps = bits_per_frame * frames_per_sec * 1.5 (50% margin) */
+        uint32_t fsk_bitrate_bps = (bits_per_frame * frames_per_sec * 15) / 10;
+        uint32_t fsk_bitrate_kbps = (fsk_bitrate_bps + 999) / 1000;  /* round up */
+        printf("FSK: %u bytes/frame * %u fps -> %lu kbps\r\n",
+               _bytes_per_frame, frames_per_sec, fsk_bitrate_kbps);
+        lorahal.loRaModemConfig(fsk_bitrate_kbps, 0, 0);
+    }
+#else
     lorahal.loRaModemConfig(lora_bw_khz, sf_at_500KHz, 1);
+#endif
+
     lorahal.setChannel(CF_HZ);
 
     lorahal.set_tx_dbm(TX_DBM);
 
+#ifdef MODEM_FSK
+    /* FSK packet config: preamble in bits, variable length, CRC on */
+    lorahal.loRaPacketConfig(40, false, true, false);
+#else
                       // preambleLen, fixLen, crcOn, invIQ
     lorahal.loRaPacketConfig(8, false, false, false);      // crcOff
+#endif
 
     lorahal.postcfgreadback();
 }

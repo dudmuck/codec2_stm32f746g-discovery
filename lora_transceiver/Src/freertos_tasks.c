@@ -44,6 +44,7 @@ extern bool micLeftEn;
 SemaphoreHandle_t xAudioHalfSemaphore = NULL;
 SemaphoreHandle_t xAudioFullSemaphore = NULL;
 SemaphoreHandle_t xTxDoneSemaphore = NULL;
+SemaphoreHandle_t xRadioServiceSemaphore = NULL;  /* Radio DIO8 IRQ signaling */
 
 /* Event group for low-latency wake on frame ready OR TX done */
 static EventGroupHandle_t xTxEventGroup = NULL;
@@ -55,6 +56,7 @@ SemaphoreHandle_t xTxBufMutex = NULL;
 TaskHandle_t xMainTaskHandle = NULL;
 TaskHandle_t xEncoderTaskHandle = NULL;
 TaskHandle_t xTxTaskHandle = NULL;
+TaskHandle_t xRadioServiceTaskHandle = NULL;
 
 /* Stream buffer for encoded data */
 StreamBufferHandle_t xTxStreamBuffer = NULL;
@@ -94,6 +96,7 @@ extern void AudioLoopback_demo(void);
 static void vMainTask(void *pvParameters);
 static void vEncoderTask(void *pvParameters);
 static void vTxTask(void *pvParameters);
+static void vRadioServiceTask(void *pvParameters);
 
 /*
  * Initialize FreeRTOS primitives and create tasks
@@ -104,6 +107,7 @@ void freertos_tasks_init(void)
     xAudioHalfSemaphore = xSemaphoreCreateBinary();
     xAudioFullSemaphore = xSemaphoreCreateBinary();
     xTxDoneSemaphore = xSemaphoreCreateBinary();
+    xRadioServiceSemaphore = xSemaphoreCreateBinary();  /* Radio IRQ signaling */
     xTxBufMutex = xSemaphoreCreateMutex();
     xEncodedFrameMutex = xSemaphoreCreateMutex();
     /* Counting semaphore for frame ready signaling (up to NUM_ENCODE_BUFS frames) */
@@ -113,7 +117,8 @@ void freertos_tasks_init(void)
     xTxEventGroup = xEventGroupCreate();
 
     if (xAudioHalfSemaphore == NULL || xAudioFullSemaphore == NULL ||
-        xTxDoneSemaphore == NULL || xTxBufMutex == NULL ||
+        xTxDoneSemaphore == NULL || xRadioServiceSemaphore == NULL ||
+        xTxBufMutex == NULL ||
         xEncodedFrameMutex == NULL || xFrameReadySemaphore == NULL ||
         xTxEventGroup == NULL) {
         printf("\e[31mFreeRTOS: semaphore/event creation failed!\e[0m\r\n");
@@ -155,6 +160,22 @@ void freertos_tasks_init(void)
     );
     if (ret != pdPASS) {
         printf("\e[31mFreeRTOS: encoder task creation failed!\e[0m\r\n");
+        return;
+    }
+
+    /* Create radio service task - highest priority to preempt decode and
+     * prevent FIFO overflow. This task wakes on DIO8 IRQ and calls
+     * lorahal.service() to read the RX FIFO before it overflows. */
+    ret = xTaskCreate(
+        vRadioServiceTask,
+        "RadioSvc",
+        RADIO_SERVICE_STACK_SIZE,
+        NULL,
+        RADIO_SERVICE_TASK_PRIORITY,
+        &xRadioServiceTaskHandle
+    );
+    if (ret != pdPASS) {
+        printf("\e[31mFreeRTOS: radio service task creation failed!\e[0m\r\n");
         return;
     }
 
@@ -213,6 +234,19 @@ void freertos_tx_done_FromISR(void)
         xTaskNotifyFromISR(xMainTaskHandle, EVENT_TX_DONE, eSetBits, &xHigherPriorityTaskWoken);
     }
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+/*
+ * Signal from ISR: Radio DIO8 interrupt
+ * Wakes radio service task to read FIFO before overflow
+ */
+void freertos_radio_irq_FromISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (xRadioServiceSemaphore != NULL) {
+        xSemaphoreGiveFromISR(xRadioServiceSemaphore, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
 }
 
 /*
@@ -369,7 +403,8 @@ static void vEncoderTask(void *pvParameters)
     int32_t encoded_len;
     static uint8_t first_encode = 1;
     static uint32_t enc_count = 0;
-    static uint32_t enc_time_max = 0;
+    /* Use global enc_time_max from lora_xcvr.c so it gets printed in TX end message */
+    extern uint32_t enc_time_max;
 
     encoder_state = "DISABLED";
     printf("ENC_TASK: started\r\n");
@@ -386,7 +421,7 @@ static void vEncoderTask(void *pvParameters)
             encoder_state = "IDLE";
             first_encode = 1;  /* Reset for next session */
             enc_count = 0;
-            enc_time_max = 0;
+            /* Note: enc_time_max is reset in lora_xcvr.c after "TX end" print */
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
@@ -547,6 +582,27 @@ static void vTxTask(void *pvParameters)
         /* If TX is active, wait for TxDone before processing more */
         if (txing) {
             xSemaphoreTake(xTxDoneSemaphore, pdMS_TO_TICKS(100));
+        }
+    }
+}
+
+/*
+ * Radio service task - highest priority to preempt Opus decode
+ *
+ * This task wakes on DIO8 IRQ and immediately calls lorahal.service()
+ * to read the RX FIFO before it overflows. In voice mode, Opus decode
+ * blocks for ~28ms, during which FIFO can fill up at 95 kbps.
+ * By running at highest priority, this task preempts decode to service FIFO.
+ */
+static void vRadioServiceTask(void *pvParameters)
+{
+    (void)pvParameters;
+
+    for (;;) {
+        /* Wait for DIO8 IRQ signal - block indefinitely */
+        if (xSemaphoreTake(xRadioServiceSemaphore, portMAX_DELAY) == pdTRUE) {
+            /* Service radio immediately - reads FIFO and processes events */
+            lorahal.service();
         }
     }
 }

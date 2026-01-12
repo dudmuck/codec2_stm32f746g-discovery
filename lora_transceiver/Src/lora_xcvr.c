@@ -1544,11 +1544,25 @@ void AudioLoopback_demo(void)
                             tx_buf_produced = 0;
                             stream_state = STREAM_BUFFERING_NEXT;
                         } else {
-                            /* Still transmitting packets - DON'T clear audio_rec_buffer_state!
-                             * Leave it set so we process this audio data on next loop
-                             * after TX completes and tx_buf_idx is reset. */
-                            lorahal.service();
-                            goto skip_encode;
+#ifdef USE_FREERTOS
+                            if (freertos_concurrent_encode_enabled()) {
+                                /* Concurrent mode: continue getting frames from encoder
+                                 * task during TX. This allows pipelined encoding.
+                                 * But only if buffer has space for another frame. */
+                                if (tx_buf_idx + _bytes_per_frame <= LR20XX_BUF_SIZE) {
+                                    /* Fall through to get encoded frames. */
+                                } else {
+                                    /* Buffer full - wait for TX to complete */
+                                    lorahal.service();
+                                    goto skip_encode;
+                                }
+                            } else
+#endif
+                            {
+                                /* Non-concurrent mode: wait for TX to complete */
+                                lorahal.service();
+                                goto skip_encode;
+                            }
                         }
                     } else if (tx_fifo_idx >= tx_total_size) {
                         /* Normal mode: FIFO fully loaded - start buffering next packet */
@@ -1571,7 +1585,14 @@ void AudioLoopback_demo(void)
                              * task but stay in STREAM_WAIT_TX so Send_lr20xx_fifo_continue()
                              * can still feed the FIFO. Don't transition to BUFFERING_NEXT
                              * until FIFO is fully loaded (handled by tx_fifo_idx check above).
-                             * Fall through to get encoded frames. */
+                             * Only fall through if buffer has space. */
+                            if (tx_buf_idx + _bytes_per_frame <= LR20XX_BUF_SIZE) {
+                                /* Fall through to get encoded frames. */
+                            } else {
+                                /* Buffer full - wait for TX to complete */
+                                lorahal.service();
+                                goto skip_encode;
+                            }
                         } else
 #endif
                         {
@@ -1686,6 +1707,9 @@ void AudioLoopback_demo(void)
                                tx_buf_idx, _bytes_per_frame, LR20XX_BUF_SIZE);
                         overflow_warn_cnt++;
                     }
+                    /* CRITICAL: Clear audio_rec_buffer_state to prevent infinite loop.
+                     * Without this, the same audio callback triggers repeatedly. */
+                    audio_rec_buffer_state = BUFFER_OFFSET_NONE;
                     lorahal.service();
                     goto skip_encode;
                 }
@@ -1897,6 +1921,11 @@ skip_encode:
             overrun_debug_pending = 0;
         }
 
+        /* Streaming RX: decode frames as they arrive from FIFO.
+         * IMPORTANT: Do this BEFORE checking overflow, so we decode any valid
+         * data that was read before the overflow occurred. */
+        streaming_rx_decode();
+
         /* Check for FIFO overflow (deferred from IRQ) */
         {
             extern volatile uint8_t fifo_rx_overflow;
@@ -1930,9 +1959,6 @@ skip_encode:
                 /* WARN printf disabled to reduce main loop latency */
             }
         }
-
-        /* Streaming RX: decode frames as they arrive from FIFO */
-        streaming_rx_decode();
 #endif
 
         if (rx_size != -1) {

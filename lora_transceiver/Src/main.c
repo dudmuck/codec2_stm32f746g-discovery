@@ -619,7 +619,10 @@ int main(void)
     {
         uint16_t rx_threshold, tx_threshold;
         if (streaming_cfg.packets_per_frame > 1) {
-            /* Multi-packet mode: drain RX FIFO frequently (every 64 bytes) to avoid overflow */
+            /* Multi-packet mode: threshold at 64 bytes.
+             * With single-read FIFO callback (no loop), more frequent smaller
+             * reads are faster than fewer large reads that risk overflow.
+             * Headroom: 256-64=192 bytes before overflow at 95 kbps. */
             rx_threshold = 64;
             tx_threshold = 64;
         } else {

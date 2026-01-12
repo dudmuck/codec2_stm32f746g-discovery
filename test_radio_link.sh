@@ -54,6 +54,9 @@ NC='\033[0m' # No Color
 
 cleanup() {
     echo "Cleaning up..."
+    # Stop TX on both boards (in case TX is still running)
+    echo -n "r" > "$TX_DEV" 2>/dev/null
+    echo -n "r" > "$RX_DEV" 2>/dev/null
     # Kill background processes
     kill $TX_PID $RX_PID 2>/dev/null
     # Close file descriptors
@@ -146,8 +149,10 @@ run_test() {
     # Wait for test duration
     sleep $TEST_DURATION
 
-    # Stop TX
+    # Stop TX (send twice with delay to ensure it's received)
     echo "  Stopping TX..."
+    send_cmd "$TX_DEV" "r"
+    sleep 0.5
     send_cmd "$TX_DEV" "r"
     sleep 1
 

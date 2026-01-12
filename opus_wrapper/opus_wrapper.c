@@ -94,10 +94,12 @@ struct OPUS_WRAPPER *opus_wrapper_create_ex(int mode, int frame_ms)
     /* Get sample rate and bandwidth for this mode */
     sample_rate = get_mode_sample_rate(mode);
     bandwidth = get_bandwidth_for_rate(sample_rate);
+    printf("opus_wrapper: mode=%d sr=%d bw=%d\r\n", mode, sample_rate, bandwidth);
 
     /* Allocate wrapper state */
     ow = (struct OPUS_WRAPPER *)malloc(sizeof(struct OPUS_WRAPPER));
     if (ow == NULL) {
+        printf("opus_wrapper: malloc failed\r\n");
         return NULL;
     }
     memset(ow, 0, sizeof(struct OPUS_WRAPPER));
@@ -110,6 +112,7 @@ struct OPUS_WRAPPER *opus_wrapper_create_ex(int mode, int frame_ms)
         &error
     );
     if (error != OPUS_OK || ow->encoder == NULL) {
+        printf("opus_wrapper: encoder_create failed err=%d\r\n", error);
         free(ow);
         return NULL;
     }
@@ -121,6 +124,7 @@ struct OPUS_WRAPPER *opus_wrapper_create_ex(int mode, int frame_ms)
         &error
     );
     if (error != OPUS_OK || ow->decoder == NULL) {
+        printf("opus_wrapper: decoder_create failed err=%d\r\n", error);
         opus_encoder_destroy(ow->encoder);
         free(ow);
         return NULL;

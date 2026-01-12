@@ -192,7 +192,17 @@ caddr_t _sbrk(int incr)
 		heap_end = &end;
 
 	prev_heap_end = heap_end;
+
+#ifdef USE_FREERTOS
+	/* With FreeRTOS, task stacks are in the FreeRTOS heap (ucHeap) which is
+	 * allocated in BSS, not at top of RAM. Use _Min_Heap_Size from linker
+	 * script to set the C heap limit. Reserve 16KB for the main stack. */
+	extern char _Min_Heap_Size;  /* Heap size from linker script */
+	char *heap_limit = &end + (size_t)&_Min_Heap_Size;
+	if (heap_end + incr > heap_limit)
+#else
 	if (heap_end + incr > stack_ptr)
+#endif
 	{
 //		write(1, "Heap and stack collision\n", 25);
 //		abort();
