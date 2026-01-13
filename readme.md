@@ -295,3 +295,7 @@ For FCC Part 15.247 compliant frequency hopping spread spectrum operation, see t
 
 See [fhss_readme.md](https://github.com/dudmuck/codec2_stm32f746g-discovery/blob/lr20xx_fhss/fhss_readme.md) for documentation.
 
+### Streaming Flow Diagram
+
+![Concurrent Opus Streaming](docs/streaming_flow-3.png)
+
