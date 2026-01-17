@@ -619,11 +619,13 @@ int main(void)
     {
         uint16_t rx_threshold, tx_threshold;
         if (streaming_cfg.packets_per_frame > 1) {
-            /* Multi-packet mode: threshold at 64 bytes.
-             * With single-read FIFO callback (no loop), more frequent smaller
-             * reads are faster than fewer large reads that risk overflow.
-             * Headroom: 256-64=192 bytes before overflow at 95 kbps. */
-            rx_threshold = 64;
+            /* LoRa multi-packet mode: threshold at packet size for fast FIFO reads.
+             * LoRa uses discrete packets - each 240-byte packet must be read from
+             * the 256-byte hardware FIFO before the next packet arrives and overflows.
+             * At SF5, packets are only 17ms apart with almost no gap between them.
+             * Threshold at packet size triggers when full packet is in FIFO,
+             * allowing immediate read to make room for the next packet. */
+            rx_threshold = lora_payload_length;  /* 240 bytes for 64K/96K modes */
             tx_threshold = 64;
         } else {
             /* Normal mode: threshold at frame size for efficiency */

@@ -73,11 +73,17 @@ static uint32_t fifo_rx_irq_count;
 static uint32_t fifo_rx_total_bytes;  /* Debug: total bytes read from RX FIFO */
 static uint16_t fifo_rx_max_idx;      /* Debug: max rx_fifo_read_idx reached */
 
+/* Counter for software buffer full events (debug) */
+static uint32_t fifo_sw_full_count;
+uint32_t get_fifo_sw_full_count(void) { return fifo_sw_full_count; }
+
 void fifoRxCB(lr20xx_radio_fifo_flag_t rx_fifo_flags)
 {
     if (rx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_OVERFLOW) {
         fifo_rx_overflow = 1;
-        /* Note: printf removed from IRQ - check fifo_rx_overflow in main loop */
+        /* Clear FIFO to stop interrupt storm - data is corrupted anyway */
+        lr20xx_radio_fifo_clear_rx(NULL);
+        return;  /* Don't try to read corrupted data */
     }
     if (rx_fifo_flags & LR20XX_RADIO_FIFO_FLAG_THRESHOLD_HIGH) {
         fifo_rx_irq_count++;
@@ -87,9 +93,13 @@ void fifoRxCB(lr20xx_radio_fifo_flag_t rx_fifo_flags)
         uint16_t fifo_level;
         uint16_t max_read = (streaming_cfg.packets_per_frame > 1) ? LR20XX_BUF_SIZE : (lora_payload_length * 2);
 
-        /* Don't read past max_read boundary */
+        /* Check if software buffer is full - if so, clear hardware FIFO to prevent overflow.
+         * This loses data but maintains buffer consistency. The decode loop will handle
+         * resync via sequence number tracking. */
         if (rx_fifo_read_idx >= max_read) {
-            return;  /* Already have enough data */
+            lr20xx_radio_fifo_clear_rx(NULL);
+            fifo_sw_full_count++;
+            return;  /* Buffer full - decoder severely behind */
         }
 
         if (lr20xx_radio_fifo_get_rx_level(NULL, &fifo_level) != LR20XX_STATUS_OK) {

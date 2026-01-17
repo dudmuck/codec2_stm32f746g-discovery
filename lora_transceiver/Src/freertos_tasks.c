@@ -79,7 +79,7 @@ static volatile const char* encoder_state = "INIT";
  * - When main consumes, it advances read_idx
  * - 4 buffers allows encoder to work 3 frames ahead, absorbing timing jitter */
 #define NUM_ENCODE_BUFS 4
-static uint8_t encoded_frame_buf[NUM_ENCODE_BUFS][512];
+static uint8_t encoded_frame_buf[NUM_ENCODE_BUFS][768];  /* Must hold _bytes_per_frame (720 for 96K@60ms) */
 static volatile int32_t encoded_frame_len[NUM_ENCODE_BUFS] = {0};
 static volatile uint8_t frame_ready[NUM_ENCODE_BUFS] = {0};
 static volatile uint8_t write_idx = 0;  /* Buffer encoder writes to */
@@ -89,8 +89,9 @@ static SemaphoreHandle_t xEncodedFrameMutex = NULL;
 /* Semaphore to signal main when a frame is ready (avoids polling) */
 static SemaphoreHandle_t xFrameReadySemaphore = NULL;
 
-/* External function from lora_xcvr.c */
+/* External functions from lora_xcvr.c */
 extern void AudioLoopback_demo(void);
+extern void svc_uart(void);
 
 /* Forward declarations */
 static void vMainTask(void *pvParameters);
@@ -328,7 +329,9 @@ void freertos_tx_session_end(void)
  */
 int32_t freertos_get_encoded_frame(uint8_t *dest, uint16_t max_len)
 {
-    const TickType_t max_wait = pdMS_TO_TICKS(50);  /* 50ms timeout */
+    const TickType_t poll_interval = pdMS_TO_TICKS(5);  /* 5ms poll interval */
+    const int max_iterations = 10;  /* 50ms total timeout */
+    int iterations = 0;
 
     for (;;) {
         /* First check if frame is already available (non-blocking) */
@@ -345,27 +348,32 @@ int32_t freertos_get_encoded_frame(uint8_t *dest, uint16_t max_len)
             }
         }
 
-        /* Wait for task notification (instant from ISR, no daemon delay) */
+        /* Service UART to keep it responsive during TX.
+         * Without this, UART can become unresponsive for up to 50ms per frame. */
+        svc_uart();
+
+        /* Wait for task notification with short timeout */
         uint32_t notif_value = 0;
         BaseType_t got_notif = xTaskNotifyWait(
             0,                              /* Don't clear bits on entry */
             EVENT_FRAME_READY | EVENT_TX_DONE,  /* Clear these bits on exit */
             &notif_value,
-            max_wait
+            poll_interval
         );
 
-        if (got_notif != pdTRUE) {
-            /* Timeout with no events */
-            return 0;
+        if (got_notif == pdTRUE) {
+            /* If TX_DONE bit is set, service the radio immediately */
+            if (notif_value & EVENT_TX_DONE) {
+                lorahal.service();
+            }
+            /* If FRAME_READY bit is set, loop back to grab the frame */
+            iterations = 0;  /* Reset timeout on any event */
+        } else {
+            /* Timeout - check if we've waited long enough */
+            if (++iterations >= max_iterations) {
+                return 0;  /* Total timeout reached */
+            }
         }
-
-        /* If TX_DONE bit is set, service the radio immediately */
-        if (notif_value & EVENT_TX_DONE) {
-            lorahal.service();
-        }
-
-        /* If FRAME_READY bit is set, loop back to grab the frame */
-        /* (handled at top of loop) */
     }
 }
 
@@ -540,7 +548,7 @@ static void vEncoderTask(void *pvParameters)
 static void vTxTask(void *pvParameters)
 {
     (void)pvParameters;
-    uint8_t tx_frame[512];
+    uint8_t tx_frame[768];
     size_t received;
 
     for (;;) {
