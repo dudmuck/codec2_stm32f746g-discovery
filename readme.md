@@ -146,19 +146,19 @@ The LoRa bandwidth can be adjusted at runtime using serial commands. SF is autom
 
 With FreeRTOS concurrent encoding, the firmware auto-adjusts SF to ensure streaming is feasible with sufficient timing margin (minimum 5ms). Concurrent mode allows higher SF than sequential because encoding overlaps with TX.
 
-| Opus mode | Default BW | Auto SF (concurrent) | Max SF (sequential) |
-|-----------|------------|----------------------|---------------------|
-| 6K  | 500kHz  | SF9 | SF7 |
-| 8K  | 500kHz  | SF8 | SF6 |
-| 12K | 500kHz  | SF7 | SF6 |
-| 16K | 500kHz  | SF7 | SF5 |
-| 24K | 500kHz  | SF6 | SF5 |
-| 32K | 500kHz  | SF6* | SF5 |
-| 48K | 812kHz  | SF6 | SF5 |
-| 64K | 1000kHz | SF6 | SF5 |
-| 96K | 1000kHz | SF5 | - |
+| Opus mode | Default BW | Auto SF | Sensitivity | Max SF (sequential) |
+|-----------|------------|---------|-------------|---------------------|
+| 6K  | 500kHz  | SF9  | -127.5 dBm | SF7 |
+| 8K  | 500kHz  | SF8  | -124.5 dBm | SF6 |
+| 12K | 500kHz  | SF7  | -122 dBm   | SF6 |
+| 16K | 500kHz  | SF7  | -122 dBm   | SF5 |
+| 24K | 500kHz  | SF6  | -119 dBm   | SF5 |
+| 32K | 500kHz  | SF5  | -116 dBm   | SF5 |
+| 48K | 812kHz  | SF5  | -114 dBm   | SF5 |
+| 64K | 1000kHz | SF5  | -113.5 dBm | SF5 |
+| 96K | 1000kHz | SF5  | -113.5 dBm | - |
 
-*32K at SF6 has only 2ms margin; SF5 (18ms margin) is more reliable.
+**Sensitivity values** from LR2021 datasheet (Sub-GHz, 1% PER, 64-byte packets).
 
 **Link Budget Trade-offs:**
 - Higher BW + higher SF = lower latency, similar range
