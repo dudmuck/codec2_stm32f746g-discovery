@@ -1,3 +1,7 @@
+> [!WARNING]
+> this was an initial experimental branch.  use `freertos-opus` branch, because
+> using opus with radio transceiver requires concurrent operations.
+
 ## contains 3 projects
 
 * **passthru**: for checking [stm32f746g-discovery](https://www.st.com/en/evaluation-tools/32f746gdiscovery.html) hardware: LCD-touchscreen, microphone and speaker interface. Requires only one discovery board. Useful for anybody wishing to use this board for audio purpose.
